@@ -23,7 +23,7 @@
   "author": "chroju",
   "license": "MIT",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250806.0",
+    "@cloudflare/workers-types": "^5.20260730.1",
     "@types/node": "^24.2.1",
     "@vitest/ui": "^3.2.4",
     "jsdom": "^26.1.0",

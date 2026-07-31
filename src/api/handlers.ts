@@ -5,7 +5,17 @@ import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
 import { extractTasks } from "./tasks";
 import { setTimeMarkup } from "./time-markup";
-import type { Env } from "../types";
+import { sendPush } from "./push";
+import {
+  getSubscriptions,
+  addOrReplaceSubscription,
+  removeSubscription,
+  getNotificationSettings,
+  setNotificationSettings,
+  setStoredApiKey,
+  deleteStoredApiKey,
+} from "./kv-store";
+import type { Env, PushSubscriptionRecord } from "../types";
 
 type AppEnv = { Bindings: Env };
 
@@ -28,7 +38,9 @@ async function getApiKey(c: { env: Env; req: { raw: Request }; cookie: (name: st
   }
 }
 
-// Auth: encrypt API key and set as HTTP-Only cookie
+// Auth: encrypt API key and set as HTTP-Only cookie. Also mirrors the
+// encrypted key into KV so the Cron trigger (which has no browser cookie)
+// can authenticate as the single app user.
 api.post("/auth", async (c) => {
   const { apiKey } = await c.req.json<{ apiKey: string }>();
   if (!apiKey) return c.json({ error: "apiKey required" }, 400);
@@ -41,6 +53,7 @@ api.post("/auth", async (c) => {
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 days
   });
+  await setStoredApiKey(c.env.KV, encrypted);
   return c.json({ ok: true });
 });
 
@@ -54,7 +67,7 @@ api.get("/auth/check", async (c) => {
   }
 });
 
-// Logout: clear cookie
+// Logout: clear cookie and remove the KV mirror used by the Cron trigger.
 api.post("/auth/logout", async (c) => {
   setCookie(c, "auth", "", {
     httpOnly: true,
@@ -63,6 +76,7 @@ api.post("/auth/logout", async (c) => {
     path: "/",
     maxAge: 0,
   });
+  await deleteStoredApiKey(c.env.KV);
   return c.json({ ok: true });
 });
 
@@ -165,6 +179,90 @@ api.post("/nodes/:id/schedule", async (c) => {
 
   const name = setTimeMarkup(node.name, body.date, body.time);
   await client.updateNode(nodeId, { name });
+  return c.json({ ok: true });
+});
+
+// --- Web Push ---
+
+// Public key for the client to pass to PushManager.subscribe().
+api.get("/push/vapid-public-key", async (c) => {
+  return c.json({ publicKey: c.env.VAPID_PUBLIC_KEY });
+});
+
+// Subscribe: store (or update, keyed by endpoint) a device's PushSubscription.
+api.post("/push/subscribe", async (c) => {
+  const subscription = await c.req.json<PushSubscriptionRecord>();
+  if (!subscription.endpoint || !subscription.keys?.auth || !subscription.keys?.p256dh) {
+    return c.json({ error: "invalid push subscription" }, 400);
+  }
+  await addOrReplaceSubscription(c.env.KV, subscription);
+  return c.json({ ok: true });
+});
+
+// Unsubscribe: drop a device's subscription by endpoint.
+api.post("/push/unsubscribe", async (c) => {
+  const { endpoint } = await c.req.json<{ endpoint: string }>();
+  if (!endpoint) return c.json({ error: "endpoint required" }, 400);
+  await removeSubscription(c.env.KV, endpoint);
+  return c.json({ ok: true });
+});
+
+// Test: send a notification to every stored subscription. Used by the
+// settings UI to verify push works end to end without waiting for Cron.
+api.post("/push/test", async (c) => {
+  const subs = await getSubscriptions(c.env.KV);
+  if (subs.length === 0) {
+    return c.json({ error: "no subscriptions registered" }, 400);
+  }
+
+  const vapid = {
+    subject: c.env.VAPID_SUBJECT,
+    publicKey: c.env.VAPID_PUBLIC_KEY,
+    privateKey: c.env.VAPID_PRIVATE_KEY,
+  };
+
+  const results = await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        const result = await sendPush(
+          sub,
+          { title: "Taskflowy", body: "Test notification" },
+          vapid
+        );
+        if (result.expired) await removeSubscription(c.env.KV, sub.endpoint);
+        return { endpoint: sub.endpoint, ok: result.ok, status: result.status };
+      } catch (err) {
+        return {
+          endpoint: sub.endpoint,
+          ok: false,
+          status: 0,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    })
+  );
+
+  return c.json({ results });
+});
+
+// --- Notification settings ---
+
+api.get("/notification-settings", async (c) => {
+  const settings = await getNotificationSettings(c.env.KV);
+  return c.json(settings);
+});
+
+api.put("/notification-settings", async (c) => {
+  const body = await c.req.json<{ morningHour: number }>();
+  if (
+    typeof body.morningHour !== "number" ||
+    !Number.isInteger(body.morningHour) ||
+    body.morningHour < 0 ||
+    body.morningHour > 23
+  ) {
+    return c.json({ error: "morningHour must be an integer 0-23" }, 400);
+  }
+  await setNotificationSettings(c.env.KV, { morningHour: body.morningHour });
   return c.json({ ok: true });
 });
 

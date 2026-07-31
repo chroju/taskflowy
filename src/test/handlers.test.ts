@@ -27,6 +27,26 @@ vi.mock("../api/crypto", () => ({
   encrypt: vi.fn().mockResolvedValue("encrypted"),
 }));
 
+const { mockSendPush } = vi.hoisted(() => ({ mockSendPush: vi.fn() }));
+vi.mock("../api/push", () => ({
+  sendPush: mockSendPush,
+}));
+
+// Minimal in-memory KV mock, fresh per test via beforeEach reset.
+function makeKvNamespace() {
+  const store = new Map<string, string>();
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    put: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    delete: vi.fn(async (key: string) => {
+      store.delete(key);
+    }),
+    _store: store,
+  } as unknown as KVNamespace & { _store: Map<string, string> };
+}
+
 function makeNode(overrides: Partial<WorkflowyNode> = {}): WorkflowyNode {
   return {
     id: "node-1",
@@ -65,10 +85,22 @@ function makeRequest(path: string, options: RequestInit = {}) {
   });
 }
 
+let testKv = makeKvNamespace();
+
 const testEnv = {
   ENCRYPTION_KEY: "test-key",
   ALLOWED_ORIGINS: "http://localhost",
+  VAPID_PUBLIC_KEY: "test-vapid-public",
+  VAPID_PRIVATE_KEY: "test-vapid-private",
+  VAPID_SUBJECT: "mailto:test@example.com",
+  get KV() {
+    return testKv;
+  },
 };
+
+beforeEach(() => {
+  testKv = makeKvNamespace();
+});
 
 describe("POST /api/auth", () => {
   it("sets an auth cookie and returns ok", async () => {
@@ -381,5 +413,219 @@ describe("POST /api/nodes/:id/schedule", () => {
     const res = await app.fetch(req, testEnv);
     expect(res.status).toBe(404);
     expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+});
+
+describe("auth mirrors the encrypted API key into KV", () => {
+  it("stores the encrypted key in KV on /api/auth", async () => {
+    const req = new Request("http://localhost/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "my-key" }),
+    });
+    await app.fetch(req, testEnv);
+    expect(testKv._store.get("auth:apikey")).toBe("encrypted");
+  });
+
+  it("removes the KV mirror on logout", async () => {
+    testKv._store.set("auth:apikey", "encrypted");
+    const req = makeRequest("/api/auth/logout", { method: "POST" });
+    await app.fetch(req, testEnv);
+    expect(testKv._store.has("auth:apikey")).toBe(false);
+  });
+});
+
+describe("GET /api/push/vapid-public-key", () => {
+  it("returns the configured VAPID public key", async () => {
+    const req = makeRequest("/api/push/vapid-public-key");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { publicKey: string };
+    expect(data.publicKey).toBe("test-vapid-public");
+  });
+});
+
+describe("POST /api/push/subscribe", () => {
+  it("stores a new subscription", async () => {
+    const sub = {
+      endpoint: "https://push.example.com/a",
+      expirationTime: null,
+      keys: { auth: "auth-key", p256dh: "p256dh-key" },
+    };
+    const req = makeRequest("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify(sub),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(200);
+
+    const stored = JSON.parse(testKv._store.get("push:subscriptions") || "[]");
+    expect(stored).toHaveLength(1);
+    expect(stored[0].endpoint).toBe(sub.endpoint);
+  });
+
+  it("replaces a subscription with the same endpoint instead of duplicating", async () => {
+    const sub = {
+      endpoint: "https://push.example.com/a",
+      expirationTime: null,
+      keys: { auth: "auth-key", p256dh: "p256dh-key" },
+    };
+    await app.fetch(
+      makeRequest("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub) }),
+      testEnv
+    );
+    await app.fetch(
+      makeRequest("/api/push/subscribe", {
+        method: "POST",
+        body: JSON.stringify({ ...sub, keys: { auth: "new-auth", p256dh: "new-p256dh" } }),
+      }),
+      testEnv
+    );
+
+    const stored = JSON.parse(testKv._store.get("push:subscriptions") || "[]");
+    expect(stored).toHaveLength(1);
+    expect(stored[0].keys.auth).toBe("new-auth");
+  });
+
+  it("returns 400 for a malformed subscription", async () => {
+    const req = makeRequest("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ endpoint: "https://push.example.com/a" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/push/unsubscribe", () => {
+  it("removes a subscription by endpoint", async () => {
+    testKv._store.set(
+      "push:subscriptions",
+      JSON.stringify([
+        { endpoint: "https://a", expirationTime: null, keys: { auth: "a", p256dh: "a" } },
+        { endpoint: "https://b", expirationTime: null, keys: { auth: "b", p256dh: "b" } },
+      ])
+    );
+    const req = makeRequest("/api/push/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({ endpoint: "https://a" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(200);
+
+    const stored = JSON.parse(testKv._store.get("push:subscriptions") || "[]");
+    expect(stored.map((s: { endpoint: string }) => s.endpoint)).toEqual(["https://b"]);
+  });
+
+  it("returns 400 when endpoint is missing", async () => {
+    const req = makeRequest("/api/push/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/push/test", () => {
+  beforeEach(() => {
+    mockSendPush.mockReset();
+  });
+
+  it("returns 400 when there are no subscriptions", async () => {
+    const req = makeRequest("/api/push/test", { method: "POST" });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+
+  it("sends a test push to every stored subscription", async () => {
+    testKv._store.set(
+      "push:subscriptions",
+      JSON.stringify([
+        { endpoint: "https://a", expirationTime: null, keys: { auth: "a", p256dh: "a" } },
+        { endpoint: "https://b", expirationTime: null, keys: { auth: "b", p256dh: "b" } },
+      ])
+    );
+    mockSendPush.mockResolvedValue({ ok: true, status: 201, expired: false });
+
+    const req = makeRequest("/api/push/test", { method: "POST" });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { results: Array<{ ok: boolean }> };
+
+    expect(res.status).toBe(200);
+    expect(mockSendPush).toHaveBeenCalledTimes(2);
+    expect(data.results).toHaveLength(2);
+  });
+
+  it("drops a subscription from storage when the push service reports it expired", async () => {
+    testKv._store.set(
+      "push:subscriptions",
+      JSON.stringify([
+        { endpoint: "https://a", expirationTime: null, keys: { auth: "a", p256dh: "a" } },
+      ])
+    );
+    mockSendPush.mockResolvedValue({ ok: false, status: 410, expired: true });
+
+    const req = makeRequest("/api/push/test", { method: "POST" });
+    await app.fetch(req, testEnv);
+
+    const stored = JSON.parse(testKv._store.get("push:subscriptions") || "[]");
+    expect(stored).toHaveLength(0);
+  });
+
+  it("reports a per-subscription error without failing the whole request", async () => {
+    testKv._store.set(
+      "push:subscriptions",
+      JSON.stringify([
+        { endpoint: "https://a", expirationTime: null, keys: { auth: "a", p256dh: "a" } },
+      ])
+    );
+    mockSendPush.mockRejectedValue(new Error("network error"));
+
+    const req = makeRequest("/api/push/test", { method: "POST" });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { results: Array<{ ok: boolean; error?: string }> };
+
+    expect(res.status).toBe(200);
+    expect(data.results[0].ok).toBe(false);
+    expect(data.results[0].error).toMatch(/network error/);
+  });
+});
+
+describe("GET /api/notification-settings", () => {
+  it("returns default settings when nothing is stored", async () => {
+    const req = makeRequest("/api/notification-settings");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { morningHour: number };
+    expect(data).toEqual({ morningHour: 9 });
+  });
+});
+
+describe("PUT /api/notification-settings", () => {
+  it("persists a new morningHour", async () => {
+    const req = makeRequest("/api/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify({ morningHour: 7 }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(200);
+    expect(testKv._store.get("notification:settings")).toBe(JSON.stringify({ morningHour: 7 }));
+  });
+
+  it("returns 400 for an out-of-range hour", async () => {
+    const req = makeRequest("/api/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify({ morningHour: 24 }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for a non-integer hour", async () => {
+    const req = makeRequest("/api/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify({ morningHour: 7.5 }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
   });
 });

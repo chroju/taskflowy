@@ -66,4 +66,21 @@ export interface Env {
   ENCRYPTION_KEY: string;
   ALLOWED_ORIGINS: string;
   KV: KVNamespace;
+  VAPID_PUBLIC_KEY: string;
+  VAPID_PRIVATE_KEY: string;
+  VAPID_SUBJECT: string;
+}
+
+// Web Push subscription, as returned by PushManager.subscribe() on the client.
+export interface PushSubscriptionRecord {
+  endpoint: string;
+  expirationTime: number | null;
+  keys: {
+    auth: string;
+    p256dh: string;
+  };
+}
+
+export interface NotificationSettings {
+  morningHour: number; // JST hour (0-23), default 9
 }

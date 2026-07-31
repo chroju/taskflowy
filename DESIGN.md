@@ -42,17 +42,28 @@ Workflowyの公式APIには、TODOだけを絞り込んで取得する検索API�
 別テーブルや別ノードで期日を管理する方式は取らず、ノード名の中に埋め込むことで
 Workflowy側の見え方と完全に一致させている。
 
-## 通知（次フェーズ、未実装）
+## 通知（実装済み）
 
-次フェーズで自前のWeb Pushによる通知を実装する予定。設計方針は以下の通り。
+自前のWeb Push（VAPID）による通知を実装した。設計方針は以下の通り。
 
-- VAPIDベースのWeb Push。通知本文はE2E暗号化し、タスク名を通知に表示する。
-  タップでアプリを起動する。
-- Cron Trigger（5分間隔）でnodes-exportを監視し、期日が来たタスクを検出する。
-- 時刻付きタスクはその時刻に、日付のみのタスクは朝9時JST（設定で変更可能）に
-  まとめて通知する。
-- KVには以下を保存する: 暗号化したAPIキー、Push購読情報、通知済み記録、通知設定。
+- VAPIDベースのWeb Push。ペイロード暗号化はRFC 8291 (aes128gcm)、VAPID署名はRFC 8292
+  (ES256 JWT)。ライブラリは`@block65/webcrypto-web-push`を採用（Cloudflare Workers公式
+  サンプルを持ち、WebCrypto APIベースでNode専用実装に依存しない。VAPID鍵ペア自体の生成は
+  未提供のため、WebCryptoのECDSA P-256鍵生成で自前実装している）。通知にタスク名を表示し、
+  タップでアプリを開く。
+- Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）でnodes-exportを監視し、
+  期日が来たタスクを検出する。
+- 時刻付きタスクはその時刻を過ぎたら通知（1タスク=1通知）。日付のみのタスクは朝9時JST
+  （KVの設定`morningHour`で変更可能）に、その日が期日のタスクをまとめて1通知する。
+- KVには以下を保存する: 暗号化したAPIキー（`auth:apikey`。Cronがブラウザcookieなしで
+  Workflowy APIを呼ぶために必要）、Push購読情報（`push:subscriptions`、endpoint単位で
+  複数端末分）、通知済み記録（`notification:notified:<key>`、TTL 30日）、通知設定
+  （`notification:settings`）。
 - 二重通知防止は、KVに保存した「通知済み記録」で行う（同じタスク・同じ期日に対して
-  一度通知したら再送しない）。
+  一度通知したら再送しない。due変更時は通知キーが変わるため再通知される）。
+- 初回導入時に積み残ったoverdueタスクが一斉通知されるのを防ぐため、期日から24時間
+  （日付のみタスクは日付が変わった時点）を過ぎた分は送信せず「通知済み」としてのみ記録する。
+- 判定ロジックは`src/api/notify.ts`の`selectDueNotifications`という純粋関数に切り出し、
+  ユニットテストで仕様を担保している。
 
 この設計のためにKVバインディングが必要であり、それがJotflowyから分離した主な理由。

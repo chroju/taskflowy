@@ -12,7 +12,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate-vapid-keys": "node scripts/generate-vapid-keys.mjs"
   },
   "keywords": [
     "workflowy",

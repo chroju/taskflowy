@@ -30,12 +30,17 @@ npm run test:ui    # vitest UI起動
 ## Architecture
 
 ### Backend (src/)
-- `index.tsx` - Honoアプリケーションのエントリーポイント。ルーティング定義
-- `api/handlers.ts` - APIエンドポイント実装。認証、タスク操作、送信先ノード一覧など
+- `index.tsx` - Honoアプリケーションのエントリーポイント。ルーティング定義、`scheduled`ハンドラ（Cron）
+- `api/handlers.ts` - APIエンドポイント実装。認証、タスク操作、送信先ノード一覧、Push購読/通知設定など
 - `api/workflowy-v1.ts` - Workflowy API v1クライアント
 - `api/crypto.ts` - APIキーの暗号化/復号化
 - `api/tasks.ts` - `nodes-export`のフラットなノード配列からタスク（未完了・layoutMode=todo）を抽出
 - `api/time-markup.ts` - ノード名に埋め込む`<time>`マークアップのパース/生成
+- `api/jst.ts` - JST（UTC+9固定）の日付/時刻ユーティリティ。Dateのロケール依存メソッドは使わない
+- `api/notify.ts` - `selectDueNotifications`: 通知対象タスクを判定する純粋関数
+- `api/push.ts` - Web Push送信（`@block65/webcrypto-web-push`）とVAPID鍵ペア生成
+- `api/kv-store.ts` - KVアクセスの薄いラッパー（購読リスト、通知済み記録、通知設定、暗号化APIキー）
+- `api/cron.ts` - `runNotificationSweep`: Cronから呼ばれる通知送信フローの本体
 - `types/index.ts` - 共有型定義
 
 ### Frontend (public/)
@@ -57,13 +62,21 @@ npm run test:ui    # vitest UI起動
   このマークアップを設定/置換する
 - **Destination**: `type: "node" | "calendar"`。タスクの追加先。`calendar`は
   Workflowyネイティブカレンダー（`parent_id="today"`で送信、Day NodeはWF側でオンデマンド作成）
-- **通知**: 未実装（次フェーズ）。KVバインディング（`env.KV`）はこのために予約済み
+- **通知**: 自前Web Push（VAPID）+ Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）。
+  時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）、日付のみのタスクは
+  朝`morningHour`（KV設定、デフォルト9）JSTにその日が期日のタスクをまとめて1通知。
+  過去24時間より前に期日を迎えた分は初回導入時の大量通知を避けるため送信せず
+  「通知済み」として記録するのみ。判定ロジックは`selectDueNotifications`（純粋関数、
+  `src/test/notify.test.ts`にテストあり）
 
 ## Environment Variables (wrangler.toml)
 
 - `ENCRYPTION_KEY` - APIキー暗号化用キー
 - `ALLOWED_ORIGINS` - CORS許可オリジン（カンマ区切り）
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` - Web Push用VAPID鍵
+  （secretとして設定。`npm run generate-vapid-keys`で生成）
 
 ## KV Namespace
 
-- `KV` - 通知機能（次フェーズ）用。現時点のコードでは未使用
+- `KV` - 通知機能用データを保存。スキーマは`src/api/kv-store.ts`のコメントを参照
+  （Push購読リスト、通知済み記録、通知設定、暗号化APIキーのミラー）

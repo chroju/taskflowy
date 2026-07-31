@@ -63,6 +63,27 @@ export const MainPage: FC = () => (
             </div>
           </details>
 
+          <details class="settings-section">
+            <summary class="settings-summary"><h3>Notifications</h3></summary>
+            <div class="settings-content">
+              <p id="notification-status" class="text-muted text-small">Checking status…</p>
+              <div class="btn-group">
+                <button id="btn-enable-notifications" class="btn btn-small btn-primary">Enable</button>
+                <button id="btn-disable-notifications" class="btn btn-small hidden">Disable</button>
+                <button id="btn-test-notification" class="btn btn-small hidden">Send test</button>
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="notification-hour-input">Daily reminder time (JST)</label>
+                <input id="notification-hour-input" type="number" min="0" max="23" class="input" />
+                <button id="btn-save-notification-hour" class="btn btn-small">Save</button>
+              </div>
+              <p class="text-muted text-small">
+                Tasks with a specific time notify when that time passes. Date-only tasks
+                are bundled into one notification at the hour above (JST).
+              </p>
+            </div>
+          </details>
+
           <details class="settings-section" open>
             <summary class="settings-summary"><h3>Destinations</h3></summary>
             <div class="settings-content">

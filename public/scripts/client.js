@@ -10,6 +10,7 @@ import {
   resolveSwipeAction,
   scheduleShortcut,
 } from "./tasks.js";
+import { urlBase64ToUint8Array } from "./push.js";
 
 // State
 let settings = loadSettings();
@@ -37,6 +38,14 @@ const btnSaveDestination = document.getElementById("btn-save-destination");
 const btnCancelDestination = document.getElementById("btn-cancel-destination");
 
 let selectedNodeId = null;
+
+// Notifications
+const notificationStatus = document.getElementById("notification-status");
+const btnEnableNotifications = document.getElementById("btn-enable-notifications");
+const btnDisableNotifications = document.getElementById("btn-disable-notifications");
+const btnTestNotification = document.getElementById("btn-test-notification");
+const notificationHourInput = document.getElementById("notification-hour-input");
+const btnSaveNotificationHour = document.getElementById("btn-save-notification-hour");
 
 // Task view
 const taskList = document.getElementById("task-list");
@@ -68,6 +77,7 @@ let undoData = null; // { task } for the last completed task
 async function init() {
   bindEvents();
   bindTaskEvents();
+  bindNotificationEvents();
   setupMobileViewport();
   registerServiceWorker();
   await checkAuth();
@@ -90,6 +100,7 @@ function bindEvents() {
   btnSettings.addEventListener("click", () => {
     updateApiKeyUI();
     renderDestinationList();
+    refreshNotificationUI();
     openModal(modalSettings);
   });
 
@@ -951,6 +962,141 @@ function showToast(message, isError = false) {
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+}
+
+// ==================== Notifications ====================
+
+function pushSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function bindNotificationEvents() {
+  btnEnableNotifications.addEventListener("click", enableNotifications);
+  btnDisableNotifications.addEventListener("click", disableNotifications);
+  btnTestNotification.addEventListener("click", sendTestNotification);
+  btnSaveNotificationHour.addEventListener("click", saveNotificationHour);
+}
+
+async function refreshNotificationUI() {
+  if (!pushSupported()) {
+    notificationStatus.textContent = "Push notifications are not supported in this browser.";
+    btnEnableNotifications.classList.add("hidden");
+    btnDisableNotifications.classList.add("hidden");
+    btnTestNotification.classList.add("hidden");
+    return;
+  }
+
+  if (Notification.permission === "denied") {
+    notificationStatus.textContent = "Notifications are blocked. Enable them in your browser/OS settings.";
+    btnEnableNotifications.classList.add("hidden");
+    btnDisableNotifications.classList.add("hidden");
+    btnTestNotification.classList.add("hidden");
+  } else {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscribed = !!existing;
+      notificationStatus.textContent = subscribed
+        ? "Notifications are enabled on this device."
+        : "Notifications are not enabled on this device.";
+      btnEnableNotifications.classList.toggle("hidden", subscribed);
+      btnDisableNotifications.classList.toggle("hidden", !subscribed);
+      btnTestNotification.classList.toggle("hidden", !subscribed);
+    } catch {
+      notificationStatus.textContent = "Could not determine notification status.";
+    }
+  }
+
+  try {
+    const settings = await apiRequest("/notification-settings");
+    notificationHourInput.value = settings.morningHour;
+  } catch {
+    // Leave the input blank if settings can't be fetched (e.g. not authenticated yet)
+  }
+}
+
+async function enableNotifications() {
+  if (!pushSupported()) return;
+  btnEnableNotifications.disabled = true;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      showToast("Notification permission was not granted", true);
+      return;
+    }
+
+    const { publicKey } = await apiRequest("/push/vapid-public-key");
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+
+    await apiRequest("/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify(subscription.toJSON()),
+    });
+
+    showToast("Notifications enabled");
+  } catch (e) {
+    showToast(e.message || "Failed to enable notifications", true);
+  } finally {
+    btnEnableNotifications.disabled = false;
+    refreshNotificationUI();
+  }
+}
+
+async function disableNotifications() {
+  btnDisableNotifications.disabled = true;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      await apiRequest("/push/unsubscribe", {
+        method: "POST",
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      await subscription.unsubscribe();
+    }
+    showToast("Notifications disabled");
+  } catch (e) {
+    showToast(e.message || "Failed to disable notifications", true);
+  } finally {
+    btnDisableNotifications.disabled = false;
+    refreshNotificationUI();
+  }
+}
+
+async function sendTestNotification() {
+  btnTestNotification.disabled = true;
+  try {
+    await apiRequest("/push/test", { method: "POST" });
+    showToast("Test notification sent");
+  } catch (e) {
+    showToast(e.message || "Failed to send test notification", true);
+  } finally {
+    btnTestNotification.disabled = false;
+  }
+}
+
+async function saveNotificationHour() {
+  const hour = parseInt(notificationHourInput.value, 10);
+  if (isNaN(hour) || hour < 0 || hour > 23) {
+    showToast("Enter an hour between 0 and 23", true);
+    return;
+  }
+  btnSaveNotificationHour.disabled = true;
+  try {
+    await apiRequest("/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify({ morningHour: hour }),
+    });
+    showToast("Reminder time saved");
+  } catch (e) {
+    showToast(e.message || "Failed to save reminder time", true);
+  } finally {
+    btnSaveNotificationHour.disabled = false;
   }
 }
 

@@ -2,6 +2,13 @@ name = "taskflowy"
 main = "src/index.tsx"
 compatibility_date = "2024-01-17"
 
+# Access (Zero Trust) fronts the custom domain; keep the unprotected
+# workers.dev route disabled so it is the only way in.
+workers_dev = false
+routes = [
+  { pattern = "task.chroju.dev", custom_domain = true }
+]
+
 [assets]
 directory = "./public"
 
@@ -13,4 +20,4 @@ id = "275f4b9656744cc18d9de514e1596426"
 crons = ["*/5 * * * *"]
 
 [vars]
-ALLOWED_ORIGINS = "https://taskflowy.chroju.workers.dev"
+ALLOWED_ORIGINS = "https://task.chroju.dev"

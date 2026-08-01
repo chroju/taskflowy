@@ -29,6 +29,7 @@ let tasksState = []; // includes completed todos (for node progress)
 let lastSyncMs = null;
 let sheetTask = null; // task shown in the detail sheet
 let addDue = "today"; // selected chip in the add sheet
+let pendingDelete = null; // { task, wrap, row } awaiting delete confirmation
 
 const REMINDER_HOURS = [7, 8, 9, 10, 21];
 const TAB_TITLES = { today: "Today", due: "Deadlines", nodes: "Nodes" };
@@ -57,10 +58,25 @@ const sheetTaskLink = $("sheet-task-link");
 const btnSnoozeTomorrow = $("btn-snooze-tomorrow");
 const btnSnoozeWeek = $("btn-snooze-week");
 const btnSheetComplete = $("btn-sheet-complete");
+const sheetDueEditor = $("sheet-due-editor");
+const sheetDateInput = $("sheet-date-input");
+const sheetTimeInput = $("sheet-time-input");
+const btnSheetSetDue = $("btn-sheet-set-due");
+const sheetNoteEditor = $("sheet-note-editor");
+const sheetNoteInput = $("sheet-note-input");
+const btnSheetSaveNote = $("btn-sheet-save-note");
+const btnSheetCancelNote = $("btn-sheet-cancel-note");
 
 const sheetAddEl = $("sheet-add");
 const taskNameInput = $("task-name-input");
+const taskDateInput = $("task-date-input");
+const taskTimeInput = $("task-time-input");
 const btnSaveTask = $("btn-save-task");
+
+const sheetDeleteEl = $("sheet-delete");
+const sheetDeleteTitle = $("sheet-delete-title");
+const btnConfirmDelete = $("btn-confirm-delete");
+const btnCancelDelete = $("btn-cancel-delete");
 
 const screenSettings = $("screen-settings");
 const btnCloseSettings = $("btn-close-settings");
@@ -394,6 +410,9 @@ function applyRowState(row, task) {
   row.classList.toggle("done", !!task.completed);
   row.classList.toggle("overdue", overdue);
   row.querySelector(".task-check").textContent = task.completed ? "✓" : "";
+  // Right swipe toggles: the underlay label mirrors what it will do.
+  const underlayComplete = row.parentElement?.querySelector(".underlay-complete");
+  if (underlayComplete) underlayComplete.textContent = task.completed ? "↩ 未完了" : "✓ 完了";
 }
 
 // ==================== Task actions ====================
@@ -437,88 +456,90 @@ async function deleteTask(task, wrap, row) {
   }
 }
 
-async function scheduleTask(task, dateStr) {
+// Sets the due date ({ date, time? }) or clears it (dateStr = null).
+async function scheduleTask(task, dateStr, timeStr) {
   await apiRequest(`/nodes/${encodeURIComponent(task.id)}/schedule`, {
     method: "POST",
-    body: JSON.stringify({ date: dateStr }),
+    body: JSON.stringify({ date: dateStr, time: timeStr || undefined }),
   });
-  task.due = { date: dateStr, time: null };
+  task.due = dateStr ? { date: dateStr, time: timeStr || null } : null;
   setTasksCache(tasksState);
   render();
 }
 
-// Touch swipe: right = complete, left = delete. Direction is locked in on
-// the first move past the threshold so vertical scrolling isn't hijacked.
+// Swipe (Pointer Events, so both touch and mouse drag work): right =
+// complete, left = delete. Direction is locked in on the first move past
+// the threshold; vertical pans stay with the browser via touch-action.
 function bindTaskRowSwipe(wrap, row, task) {
+  let activePointerId = null;
   let startX = 0;
   let startY = 0;
   let dx = 0;
   let direction = null; // "horizontal" | "vertical" | null
   let dragging = false;
+  let suppressClick = false;
 
-  row.addEventListener(
-    "touchstart",
-    (e) => {
-      const t = e.touches[0];
-      startX = t.clientX;
-      startY = t.clientY;
-      dx = 0;
-      direction = null;
-      dragging = false;
-    },
-    { passive: true }
-  );
-
-  row.addEventListener(
-    "touchmove",
-    (e) => {
-      const t = e.touches[0];
-      const curDx = t.clientX - startX;
-      const curDy = t.clientY - startY;
-
-      if (!direction) {
-        direction = swipeDirection(curDx, curDy, 10);
-        if (direction === "vertical") return; // let the page scroll
-      }
-      if (direction !== "horizontal") return;
-
-      dragging = true;
-      e.preventDefault();
-      row.classList.add("dragging");
-      dx = clampDx(curDx);
-      row.style.transform = `translateX(${dx}px)`;
-    },
-    { passive: false }
-  );
-
-  row.addEventListener("touchend", () => {
-    row.classList.remove("dragging");
-    if (dragging) {
-      const action = resolveSwipeAction(dx);
-      if (action === "complete") {
-        snapBack(row);
-        if (!task.completed) toggleComplete(task, row);
-        return;
-      }
-      if (action === "delete") {
-        deleteTask(task, wrap, row);
-        return;
-      }
-    }
-    snapBack(row);
+  row.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    activePointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+    dx = 0;
     direction = null;
     dragging = false;
   });
 
-  row.addEventListener("touchcancel", () => {
-    row.classList.remove("dragging");
-    snapBack(row);
+  row.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== activePointerId) return;
+    const curDx = e.clientX - startX;
+    const curDy = e.clientY - startY;
+
+    if (!direction) {
+      direction = swipeDirection(curDx, curDy, 10);
+      if (direction === "horizontal") {
+        try {
+          row.setPointerCapture(e.pointerId);
+        } catch {}
+        row.classList.add("dragging");
+      }
+    }
+    if (direction !== "horizontal") return;
+
+    dragging = true;
+    dx = clampDx(curDx);
+    row.style.transform = `translateX(${dx}px)`;
   });
 
-  // Tap (no drag) opens the detail sheet
-  row.addEventListener("click", () => {
-    if (Math.abs(dx) > 4) {
-      dx = 0;
+  const finish = (e, commit) => {
+    if (e.pointerId !== activePointerId) return;
+    activePointerId = null;
+    row.classList.remove("dragging");
+    if (dragging) {
+      // The click event fires right after pointerup; swallow it once.
+      suppressClick = true;
+      setTimeout(() => {
+        suppressClick = false;
+      }, 0);
+      const action = commit ? resolveSwipeAction(dx) : null;
+      snapBack(row);
+      if (action === "complete") {
+        toggleComplete(task, row); // toggle: right swipe on a completed row uncompletes
+      } else if (action === "delete") {
+        openDeleteConfirm(task, wrap, row);
+      }
+    }
+    direction = null;
+    dragging = false;
+    dx = 0;
+  };
+
+  row.addEventListener("pointerup", (e) => finish(e, true));
+  row.addEventListener("pointercancel", (e) => finish(e, false));
+
+  // Tap/click (no drag) opens the detail sheet
+  row.addEventListener("click", (e) => {
+    if (suppressClick) {
+      e.preventDefault();
       return;
     }
     openTaskSheet(task);
@@ -533,8 +554,7 @@ function snapBack(row) {
 
 // ==================== Detail sheet ====================
 
-function openTaskSheet(task) {
-  sheetTask = task;
+function fillTaskSheet(task) {
   const today = localDateString();
 
   sheetTaskTitle.textContent = normalizeTitle(task.plainName) || "（無題）";
@@ -547,20 +567,104 @@ function openTaskSheet(task) {
   sheetTaskNote.textContent = task.note ? stripHtml(task.note) : "—";
   sheetTaskLink.href = workflowyUrl(task.id);
   btnSheetComplete.textContent = task.completed ? "未完了に戻す" : "完了";
+}
 
+function openTaskSheet(task) {
+  sheetTask = task;
+  fillTaskSheet(task);
+  sheetDueEditor.classList.add("hidden");
+  sheetNoteEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
+}
+
+function toggleDueEditor() {
+  if (!sheetTask) return;
+  const opening = sheetDueEditor.classList.contains("hidden");
+  sheetNoteEditor.classList.add("hidden");
+  sheetDueEditor.classList.toggle("hidden", !opening);
+  if (opening) {
+    sheetDateInput.value = sheetTask.due ? sheetTask.due.date : "";
+    sheetTimeInput.value = sheetTask.due && sheetTask.due.time ? sheetTask.due.time : "";
+  }
+}
+
+function toggleNoteEditor() {
+  if (!sheetTask) return;
+  const opening = sheetNoteEditor.classList.contains("hidden");
+  sheetDueEditor.classList.add("hidden");
+  sheetNoteEditor.classList.toggle("hidden", !opening);
+  if (opening) {
+    sheetNoteInput.value = sheetTask.note ? stripHtml(sheetTask.note) : "";
+    sheetNoteInput.focus();
+  }
+}
+
+// Applies a due change from the detail sheet editor and refreshes the view.
+async function applySheetDue(dateStr, timeStr) {
+  if (!sheetTask) return;
+  const task = sheetTask;
+  try {
+    await scheduleTask(task, dateStr, timeStr);
+    fillTaskSheet(task);
+    sheetDueEditor.classList.add("hidden");
+    showToast(dateStr ? "期限を設定しました" : "期限を解除しました");
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function saveSheetNote() {
+  if (!sheetTask) return;
+  const task = sheetTask;
+  const note = sheetNoteInput.value;
+  btnSheetSaveNote.disabled = true;
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(task.id)}/note`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    });
+    task.note = note || null;
+    setTasksCache(tasksState);
+    fillTaskSheet(task);
+    sheetNoteEditor.classList.add("hidden");
+    showToast("メモを保存しました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSheetSaveNote.disabled = false;
+  }
 }
 
 function closeSheets() {
   sheetTaskEl.classList.add("hidden");
   sheetAddEl.classList.add("hidden");
+  sheetDeleteEl.classList.add("hidden");
   sheetTask = null;
+  pendingDelete = null;
+}
+
+// ==================== Delete confirmation ====================
+
+function openDeleteConfirm(task, wrap, row) {
+  pendingDelete = { task, wrap, row };
+  sheetDeleteTitle.textContent = normalizeTitle(task.plainName) || "（無題）";
+  sheetDeleteEl.classList.remove("hidden");
+}
+
+function confirmDelete() {
+  if (!pendingDelete) return;
+  const { task, wrap, row } = pendingDelete;
+  pendingDelete = null;
+  sheetDeleteEl.classList.add("hidden");
+  deleteTask(task, wrap, row);
 }
 
 // ==================== Add sheet ====================
 
 function openAddSheet() {
   taskNameInput.value = "";
+  taskDateInput.value = "";
+  taskTimeInput.value = "";
   addDue = "today";
   renderDueChips();
   sheetAddEl.classList.remove("hidden");
@@ -568,9 +672,23 @@ function openAddSheet() {
 }
 
 function renderDueChips() {
+  // A custom date/time entry overrides (and deselects) the chips.
+  const custom = !!(taskDateInput.value || taskTimeInput.value);
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
-    chip.classList.toggle("active", chip.dataset.due === addDue);
+    chip.classList.toggle("active", !custom && chip.dataset.due === addDue);
   });
+}
+
+// Due for a new task: custom date/time wins over the chips. A time without
+// a date means today at that time.
+function resolveAddDue() {
+  const date = taskDateInput.value;
+  const time = taskTimeInput.value;
+  if (date || time) {
+    return { date: date || localDateString(), time: time || null };
+  }
+  const due = dueShortcut(addDue);
+  return due ? { date: due.date, time: null } : null;
 }
 
 async function handleAddTask() {
@@ -597,11 +715,11 @@ async function handleAddTask() {
       }),
     });
 
-    const due = dueShortcut(addDue);
+    const due = resolveAddDue();
     if (due && result.item_id) {
       await apiRequest(`/nodes/${encodeURIComponent(result.item_id)}/schedule`, {
         method: "POST",
-        body: JSON.stringify({ date: due.date }),
+        body: JSON.stringify({ date: due.date, time: due.time || undefined }),
       });
     }
 
@@ -613,7 +731,7 @@ async function handleAddTask() {
       parentId: dest.type === "node" ? dest.nodeId : null,
       parentPath: dest.type === "node" ? [dest.name] : [],
       createdAt: Math.floor(Date.now() / 1000),
-      due: due ? { date: due.date, time: null } : null,
+      due,
       completed: false,
     };
     tasksState = [newTask, ...tasksState];
@@ -656,9 +774,14 @@ function bindEvents() {
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       addDue = chip.dataset.due;
+      taskDateInput.value = "";
+      taskTimeInput.value = "";
       renderDueChips();
     });
   });
+
+  taskDateInput.addEventListener("input", renderDueChips);
+  taskTimeInput.addEventListener("input", renderDueChips);
 
   btnSaveTask.addEventListener("click", handleAddTask);
   taskNameInput.addEventListener("keydown", (e) => {
@@ -670,6 +793,32 @@ function bindEvents() {
 
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
   btnSnoozeWeek.addEventListener("click", () => snoozeSheetTask("week"));
+
+  sheetTaskDue.addEventListener("click", toggleDueEditor);
+  sheetTaskNote.addEventListener("click", toggleNoteEditor);
+
+  sheetTaskEl.querySelectorAll(".sheet-due-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const due = dueShortcut(chip.dataset.due);
+      applySheetDue(due ? due.date : null);
+    });
+  });
+
+  btnSheetSetDue.addEventListener("click", () => {
+    const date = sheetDateInput.value;
+    const time = sheetTimeInput.value;
+    if (!date && !time) {
+      showToast("日付を選択してください", true);
+      return;
+    }
+    applySheetDue(date || localDateString(), time || undefined);
+  });
+
+  btnSheetSaveNote.addEventListener("click", saveSheetNote);
+  btnSheetCancelNote.addEventListener("click", () => sheetNoteEditor.classList.add("hidden"));
+
+  btnConfirmDelete.addEventListener("click", confirmDelete);
+  btnCancelDelete.addEventListener("click", closeSheets);
 
   btnSheetComplete.addEventListener("click", () => {
     if (!sheetTask) return;

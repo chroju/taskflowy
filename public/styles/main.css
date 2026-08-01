@@ -236,6 +236,8 @@ button {
   background: var(--base);
   touch-action: pan-y;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .task-row:hover {
@@ -472,6 +474,21 @@ button {
   overflow-wrap: break-word;
 }
 
+/* 期限/メモ行はタップで編集（buttonとして描画） */
+button.sheet-prop-value {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sheet-prop-edit {
+  text-decoration: underline dotted rgba(202, 211, 245, 0.35);
+  text-underline-offset: 3px;
+}
+
 .sheet-due {
   font-family: var(--font-mono);
   font-weight: 600;
@@ -536,6 +553,20 @@ button {
   font-weight: 600;
 }
 
+.sheet-action.danger {
+  border: 0;
+  background: var(--maroon);
+  color: var(--base);
+  font-weight: 600;
+}
+
+.sheet-delete-target {
+  margin-top: 12px;
+  font: 400 15px/1.5 var(--font-sans);
+  color: var(--subtext1);
+  text-wrap: pretty;
+}
+
 .sheet-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -566,6 +597,62 @@ button {
   gap: 8px;
   margin-top: 14px;
   align-items: center;
+}
+
+.sheet-custom-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.sheet-custom-row .chip-submit {
+  margin-left: auto;
+}
+
+.sheet-input-small {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: 400 14px/1.3 var(--font-sans);
+  outline: none;
+  color-scheme: dark;
+}
+
+.sheet-input-small:focus {
+  border-color: var(--accent);
+}
+
+.sheet-editor {
+  margin-top: 14px;
+}
+
+.sheet-editor .sheet-chip-row {
+  margin-top: 0;
+}
+
+.sheet-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: 400 15px/1.5 var(--font-sans);
+  outline: none;
+  resize: vertical;
+}
+
+.sheet-textarea::placeholder {
+  color: var(--subtext0);
+}
+
+.sheet-textarea:focus {
+  border-color: var(--accent);
 }
 
 /* ---- Chips / pills ---- */

@@ -45,11 +45,35 @@ export const MainPage: FC = () => (
         <div id="sheet-task-title" class="sheet-title"></div>
         <div class="sheet-props">
           <span class="sheet-prop-label">期限</span>
-          <span id="sheet-task-due" class="sheet-prop-value sheet-due"></span>
+          <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
           <span class="sheet-prop-label">ノード</span>
           <span id="sheet-task-node" class="sheet-prop-value"></span>
           <span class="sheet-prop-label">メモ</span>
-          <span id="sheet-task-note" class="sheet-prop-value sheet-note"></span>
+          <button id="sheet-task-note" class="sheet-prop-value sheet-prop-edit sheet-note" title="メモを編集"></button>
+        </div>
+
+        {/* 期限エディタ（期限行タップで開閉） */}
+        <div id="sheet-due-editor" class="sheet-editor hidden">
+          <div class="sheet-chip-row">
+            <button class="chip sheet-due-chip" data-due="today">今日</button>
+            <button class="chip sheet-due-chip" data-due="tomorrow">明日</button>
+            <button class="chip sheet-due-chip" data-due="week">来週</button>
+            <button class="chip sheet-due-chip" data-due="none">期限なし</button>
+          </div>
+          <div class="sheet-custom-row">
+            <input id="sheet-date-input" type="date" class="sheet-input-small" />
+            <input id="sheet-time-input" type="time" class="sheet-input-small" />
+            <button id="btn-sheet-set-due" class="chip-submit">設定</button>
+          </div>
+        </div>
+
+        {/* メモエディタ（メモ行タップで開閉） */}
+        <div id="sheet-note-editor" class="sheet-editor hidden">
+          <textarea id="sheet-note-input" class="sheet-textarea" rows={3} placeholder="メモ"></textarea>
+          <div class="sheet-custom-row">
+            <button id="btn-sheet-cancel-note" class="btn-outline">キャンセル</button>
+            <button id="btn-sheet-save-note" class="chip-submit">保存</button>
+          </div>
         </div>
         <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
           <span>Workflowy で開く</span>
@@ -59,6 +83,20 @@ export const MainPage: FC = () => (
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-snooze-week" class="sheet-action">来週へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了</button>
+        </div>
+      </div>
+    </div>
+
+    {/* 削除確認シート（左スワイプ） */}
+    <div id="sheet-delete" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-delete"></div>
+      <div class="sheet-panel">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-title">このタスクを削除しますか？</div>
+        <div id="sheet-delete-title" class="sheet-delete-target"></div>
+        <div class="sheet-actions">
+          <button id="btn-cancel-delete" class="sheet-action">キャンセル</button>
+          <button id="btn-confirm-delete" class="sheet-action danger">削除</button>
         </div>
       </div>
     </div>
@@ -73,6 +111,10 @@ export const MainPage: FC = () => (
           <button class="chip due-chip" data-due="tomorrow">明日</button>
           <button class="chip due-chip" data-due="week">来週</button>
           <button class="chip due-chip" data-due="none">期限なし</button>
+        </div>
+        <div class="sheet-custom-row">
+          <input id="task-date-input" type="date" class="sheet-input-small" />
+          <input id="task-time-input" type="time" class="sheet-input-small" />
           <button id="btn-save-task" class="chip-submit">追加</button>
         </div>
       </div>

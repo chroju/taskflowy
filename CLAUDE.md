@@ -63,8 +63,12 @@ npm run test:ui    # vitest UI起動
 - **タスク取得**: 検索APIが無いため`GET /nodes-export`（1req/min制限）を使用し、Worker側で
   `layoutMode: "todo"`のノードを抽出する。`/api/tasks`はNodesタブの進捗表示（done/total）のため
   完了済みも`completed`フラグ付きで返す。Cron通知は未完了のみ対象。クライアントは60秒TTLのキャッシュを持つ
-- **タスク操作**: 行の右スワイプ=完了、左スワイプ=削除（`DELETE /api/nodes/:id`）、
-  行タップ=詳細シート。期限変更は詳細シートの「明日へ/来週へ」のみ（任意日付のUIは無い）
+- **タスク操作**: 行の右スワイプ=完了トグル、左スワイプ=削除（確認シートを挟んで
+  `DELETE /api/nodes/:id`）、
+  行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。期限は詳細シートの
+  「明日へ/来週へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）、
+  メモはメモ行タップで編集（`POST /api/nodes/:id/note`）。追加シートはチップに加えて
+  任意の日付/時刻を指定可能
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **Destination**: `type: "node" | "calendar"`。タスクの追加先。`calendar`は

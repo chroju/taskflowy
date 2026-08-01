@@ -451,6 +451,79 @@ describe("POST /api/nodes/:id/schedule", () => {
   });
 });
 
+describe("POST /api/nodes/:id/schedule (clear)", () => {
+  beforeEach(() => {
+    mockGetNode.mockReset();
+    mockUpdateNode.mockReset();
+  });
+
+  it("strips the time markup when date is null", async () => {
+    mockGetNode.mockResolvedValue(
+      makeNode({
+        id: "node-abc",
+        name: 'Buy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>',
+      })
+    );
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/schedule", {
+      method: "POST",
+      body: JSON.stringify({ date: null }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { name: "Buy milk" });
+  });
+});
+
+describe("POST /api/nodes/:id/note", () => {
+  beforeEach(() => {
+    mockUpdateNode.mockReset();
+  });
+
+  it("updates the node note", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: "buy at the corner store" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { note: "buy at the corner store" });
+  });
+
+  it("accepts an empty string to clear the note", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: "" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { note: "" });
+  });
+
+  it("rejects a non-string note", async () => {
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: 42 }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+});
+
 describe("auth mirrors the encrypted API key into KV", () => {
   it("stores the encrypted key in KV on /api/auth", async () => {
     const req = new Request("http://localhost/api/auth", {

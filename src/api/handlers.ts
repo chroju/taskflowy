@@ -4,7 +4,7 @@ import { setCookie, getCookie } from "hono/cookie";
 import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
 import { extractTasks } from "./tasks";
-import { setTimeMarkup } from "./time-markup";
+import { setTimeMarkup, stripTimeMarkup } from "./time-markup";
 import { sendPush } from "./push";
 import {
   getSubscriptions,
@@ -172,12 +172,15 @@ api.delete("/nodes/:id", async (c) => {
 });
 
 // Schedule a task: sets/replaces the <time> markup embedded in its name.
+// date: null clears the due date (removes the markup).
 api.post("/nodes/:id/schedule", async (c) => {
   const apiKey = await getApiKey(c as never);
   const nodeId = c.req.param("id");
-  const body = await c.req.json<{ date: string; time?: string }>();
+  const body = await c.req.json<{ date: string | null; time?: string }>();
 
-  if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+  // Only an explicit null clears; a missing date stays a 400.
+  const clearing = body.date === null;
+  if (!clearing && !/^\d{4}-\d{2}-\d{2}$/.test(body.date ?? "")) {
     return c.json({ error: "date (YYYY-MM-DD) required" }, 400);
   }
   if (body.time && !/^\d{2}:\d{2}$/.test(body.time)) {
@@ -188,8 +191,25 @@ api.post("/nodes/:id/schedule", async (c) => {
   const node = await client.getNode(nodeId);
   if (!node) return c.json({ error: "node not found" }, 404);
 
-  const name = setTimeMarkup(node.name, body.date, body.time);
+  const name = clearing
+    ? stripTimeMarkup(node.name)
+    : setTimeMarkup(node.name, body.date as string, body.time);
   await client.updateNode(nodeId, { name });
+  return c.json({ ok: true });
+});
+
+// Update a task's note (メモ editing in the detail sheet).
+api.post("/nodes/:id/note", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const body = await c.req.json<{ note: unknown }>();
+
+  if (typeof body.note !== "string") {
+    return c.json({ error: "note (string) required" }, 400);
+  }
+
+  const client = new WorkflowyClient(apiKey);
+  await client.updateNode(nodeId, { note: body.note });
   return c.json({ ok: true });
 });
 

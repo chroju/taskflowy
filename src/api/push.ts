@@ -1,4 +1,4 @@
-import { buildPushPayload } from "@block65/webcrypto-web-push";
+import { buildPushPayload } from "../vendor/webcrypto-web-push";
 import type { PushSubscriptionRecord } from "../types";
 
 export interface VapidConfig {
@@ -47,11 +47,11 @@ export async function sendPush(
   return { ok: res.ok, status: res.status, expired };
 }
 
-// VAPID keys are an ECDSA P-256 key pair. @block65/webcrypto-web-push only
+// VAPID keys are an ECDSA P-256 key pair. The vendored web-push module only
 // consumes keys (via vapidHeaders/buildPushPayload); it does not generate
 // them, so key generation is implemented here directly against WebCrypto.
 //
-// Encoding matches what the library expects when reading keys back
+// Encoding matches what the module expects when reading keys back
 // (see its vapidHeaders implementation):
 //   - publicKey: base64url of the raw EC point (0x04 || X || Y, 65 bytes) -
 //     this is also the format browsers expect for PushManager.subscribe's

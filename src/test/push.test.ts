@@ -4,7 +4,7 @@ const { mockBuildPushPayload } = vi.hoisted(() => ({
   mockBuildPushPayload: vi.fn(),
 }));
 
-vi.mock("@block65/webcrypto-web-push", () => ({
+vi.mock("../vendor/webcrypto-web-push", () => ({
   buildPushPayload: mockBuildPushPayload,
 }));
 

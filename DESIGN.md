@@ -47,10 +47,15 @@ Workflowy側の見え方と完全に一致させている。
 自前のWeb Push（VAPID）による通知を実装した。設計方針は以下の通り。
 
 - VAPIDベースのWeb Push。ペイロード暗号化はRFC 8291 (aes128gcm)、VAPID署名はRFC 8292
-  (ES256 JWT)。ライブラリは`@block65/webcrypto-web-push`を採用（Cloudflare Workers公式
-  サンプルを持ち、WebCrypto APIベースでNode専用実装に依存しない。VAPID鍵ペア自体の生成は
-  未提供のため、WebCryptoのECDSA P-256鍵生成で自前実装している）。通知にタスク名を表示し、
-  タップでアプリを開く。
+  (ES256 JWT)。実装は`src/vendor/webcrypto-web-push/`に取り込み済み（元は npm パッケージ
+  `@block65/webcrypto-web-push` v1.0.2、MITライセンス、
+  https://github.com/block65/webcrypto-web-push）。2026-07-31時点で最終リリースが
+  2024年12月と休眠状態だった一方、Web Pushプロトコル自体は仕様が固まっていて追従の必要が
+  ないため、依存を排除して監査可能にする方針でベンダリングした。取り込みはVAPID JWT署名と
+  ペイロード暗号化（`buildPushPayload`）のパスのみに絞り、未使用のJWT検証コードは含めて
+  いない。WebCrypto APIベースでNode専用実装に依存しない。VAPID鍵ペア自体の生成は
+  ライブラリ側でも未提供のため、WebCryptoのECDSA P-256鍵生成で自前実装している。通知に
+  タスク名を表示し、タップでアプリを開く。
 - Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）でnodes-exportを監視し、
   期日が来たタスクを検出する。
 - 時刻付きタスクはその時刻を過ぎたら通知（1タスク=1通知）。日付のみのタスクは朝9時JST

@@ -33,7 +33,6 @@
     "wrangler": "^4.28.0"
   },
   "dependencies": {
-    "@block65/webcrypto-web-push": "^1.0.2",
     "hono": "^4.11.9"
   }
 }

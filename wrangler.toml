@@ -7,7 +7,10 @@ directory = "./public"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "275f4b9656744cc18d9de514e1596426"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://taskflowy.chroju.workers.dev"

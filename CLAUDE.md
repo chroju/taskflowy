@@ -63,6 +63,9 @@ npm run test:ui    # vitest UI起動
 - **タスク取得**: 検索APIが無いため`GET /nodes-export`（1req/min制限）を使用し、Worker側で
   `layoutMode: "todo"`のノードを抽出する。`/api/tasks`はNodesタブの進捗表示（done/total）のため
   完了済みも`completed`フラグ付きで返す。Cron通知は未完了のみ対象。クライアントは60秒TTLのキャッシュを持つ
+- **Nodesタブのフィルタ**: TODOがすべて完了したノードはデフォルトで非表示。一覧右上のボタンで
+  表示/非表示を切り替え、状態は`taskflowy_settings`の`showFinishedNodes`に保存する。
+  判定は`filterFinishedNodes`（純粋関数）。TODOを1件も持たないノードは非表示の対象外
 - **タスク操作**: 行の右スワイプ=完了トグル、左スワイプ=削除（確認シートを挟んで
   `DELETE /api/nodes/:id`）、
   行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。期限は詳細シートの

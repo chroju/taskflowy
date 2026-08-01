@@ -13,6 +13,7 @@ const {
   compareDue,
   groupTasksForView,
   summarizeNodes,
+  filterFinishedNodes,
   groupNodeTasks,
   donutDash,
   workflowyUrl,
@@ -311,6 +312,24 @@ describe("summarizeNodes", () => {
   it("normalizes the node label", () => {
     const nodes = summarizeNodes([task({ parentId: "p1", parentPath: ["<b>Bold</b> 🔥 name"] })], TODAY);
     expect(nodes[0].label).toBe("Bold name");
+  });
+});
+
+describe("filterFinishedNodes", () => {
+  const open = { key: "p1", label: "Project A", total: 3, done: 1, hasOverdue: false, tasks: [] };
+  const finished = { key: "p2", label: "Project B", total: 2, done: 2, hasOverdue: false, tasks: [] };
+  const empty = { key: "p3", label: "Project C", total: 0, done: 0, hasOverdue: false, tasks: [] };
+
+  it("drops nodes whose todos are all done", () => {
+    expect(filterFinishedNodes([open, finished], false).map((n: { key: string }) => n.key)).toEqual(["p1"]);
+  });
+
+  it("keeps every node when showFinished is true", () => {
+    expect(filterFinishedNodes([open, finished], true).map((n: { key: string }) => n.key)).toEqual(["p1", "p2"]);
+  });
+
+  it("keeps nodes with no todos at all", () => {
+    expect(filterFinishedNodes([empty], false).map((n: { key: string }) => n.key)).toEqual(["p3"]);
   });
 });
 

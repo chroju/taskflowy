@@ -49,6 +49,10 @@ export function groupTasksForView<T extends TaskLike>(
 ): TaskGroup<T>[];
 
 export function summarizeNodes<T extends TaskLike>(tasks: T[], todayStr?: string): NodeSummary<T>[];
+export function filterFinishedNodes<T extends TaskLike>(
+  nodes: NodeSummary<T>[],
+  showFinished: boolean
+): NodeSummary<T>[];
 export function groupNodeTasks<T extends TaskLike>(tasks: T[]): TaskGroup<T>[];
 export function donutDash(done: number, total: number): string;
 

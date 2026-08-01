@@ -9,6 +9,7 @@ import {
   classifyDue,
   groupTasksForView,
   summarizeNodes,
+  filterFinishedNodes,
   groupNodeTasks,
   donutDash,
   workflowyUrl,
@@ -309,11 +310,27 @@ function renderList(node) {
 }
 
 function renderNodeList() {
-  const nodes = summarizeNodes(tasksState);
+  const allNodes = summarizeNodes(tasksState);
+  const showFinished = settings.showFinishedNodes === true;
+  const nodes = filterFinishedNodes(allNodes, showFinished);
+  const hiddenCount = allNodes.length - nodes.length;
   screenCount.textContent = `${nodes.length} ノード`;
 
+  const toggle = document.createElement("button");
+  toggle.className = "node-filter" + (showFinished ? " active" : "");
+  toggle.textContent = showFinished ? "完了済みを隠す" : `完了済みを表示${hiddenCount ? ` (${hiddenCount})` : ""}`;
+  toggle.addEventListener("click", () => {
+    settings.showFinishedNodes = !showFinished;
+    saveSettings();
+    render();
+  });
+  taskList.appendChild(toggle);
+
   if (!nodes.length) {
-    taskList.innerHTML = '<p class="list-empty">タスクはありません</p>';
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = hiddenCount ? "未完了のタスクを持つノードはありません" : "タスクはありません";
+    taskList.appendChild(empty);
     return;
   }
 

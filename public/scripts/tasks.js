@@ -192,6 +192,14 @@ export function summarizeNodes(tasks, todayStr = localDateString()) {
   return order.map((key) => byKey.get(key));
 }
 
+// Hides nodes whose todos are all completed, unless `showFinished` is set.
+// A node with no todos at all is never hidden -- "nothing done" is not the
+// same as "everything done".
+export function filterFinishedNodes(nodes, showFinished) {
+  if (showFinished) return nodes;
+  return nodes.filter((node) => node.total === 0 || node.done < node.total);
+}
+
 // Splits a single node's tasks into 未完了 / 完了 groups (empty omitted).
 export function groupNodeTasks(tasks) {
   const open = tasks.filter((t) => !t.completed);

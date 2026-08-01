@@ -15,11 +15,15 @@ function buildParentPath(node: ExportNode, byId: Map<string, ExportNode>): strin
   return path;
 }
 
-export function extractTasks(nodes: ExportNode[]): Task[] {
+export function extractTasks(
+  nodes: ExportNode[],
+  options: { includeCompleted?: boolean } = {}
+): Task[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  const isCompleted = (n: ExportNode) => n.completedAt != null || !!n.completed;
 
   return nodes
-    .filter((n) => n.data?.layoutMode === "todo" && n.completedAt == null && !n.completed)
+    .filter((n) => n.data?.layoutMode === "todo" && (options.includeCompleted || !isCompleted(n)))
     .map((n) => ({
       id: n.id,
       name: n.name,
@@ -29,5 +33,6 @@ export function extractTasks(nodes: ExportNode[]): Task[] {
       parentPath: buildParentPath(n, byId),
       createdAt: n.createdAt,
       due: parseTimeMarkup(n.name),
+      completed: isCompleted(n),
     }));
 }

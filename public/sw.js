@@ -1,4 +1,4 @@
-const CACHE_VERSION = "0.0.2";
+const CACHE_VERSION = "0.1.1";
 const CACHE_NAME = `taskflowy-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   "/",
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   "/scripts/tasks.js",
   "/scripts/push.js",
   "/manifest.json",
+  "/favicon.svg",
 ];
 
 self.addEventListener("install", (event) => {

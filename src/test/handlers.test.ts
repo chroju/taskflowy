@@ -9,6 +9,7 @@ const mockCompleteNode = vi.fn();
 const mockUncompleteNode = vi.fn();
 const mockNodesExport = vi.fn();
 const mockUpdateNode = vi.fn();
+const mockDeleteNode = vi.fn();
 
 vi.mock("../api/workflowy-v1", () => ({
   WorkflowyClient: vi.fn().mockImplementation(() => ({
@@ -19,6 +20,7 @@ vi.mock("../api/workflowy-v1", () => ({
     uncompleteNode: mockUncompleteNode,
     nodesExport: mockNodesExport,
     updateNode: mockUpdateNode,
+    deleteNode: mockDeleteNode,
   })),
 }));
 
@@ -302,6 +304,22 @@ describe("GET /api/tasks", () => {
     expect(data.tasks[0].id).toBe("a");
   });
 
+  it("includes completed todo tasks with a completed flag", async () => {
+    mockNodesExport.mockResolvedValue([
+      makeExportNode({ id: "a", name: "Open task", data: { layoutMode: "todo" } }),
+      makeExportNode({ id: "b", name: "Done task", data: { layoutMode: "todo" }, completedAt: 123 }),
+    ]);
+
+    const req = makeRequest("/api/tasks");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { tasks: Array<{ id: string; completed: boolean }> };
+
+    expect(res.status).toBe(200);
+    expect(data.tasks).toHaveLength(2);
+    expect(data.tasks.find((t) => t.id === "a")?.completed).toBe(false);
+    expect(data.tasks.find((t) => t.id === "b")?.completed).toBe(true);
+  });
+
   it("returns 429 with an error message when Workflowy rate-limits nodes-export", async () => {
     mockNodesExport.mockRejectedValue(new Error("Workflowy API error 429: rate limited"));
 
@@ -320,6 +338,23 @@ describe("GET /api/tasks", () => {
     const res = await app.fetch(req, testEnv);
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe("DELETE /api/nodes/:id", () => {
+  beforeEach(() => {
+    mockDeleteNode.mockReset();
+  });
+
+  it("calls deleteNode and returns ok", async () => {
+    mockDeleteNode.mockResolvedValue(undefined);
+    const req = makeRequest("/api/nodes/node-abc", { method: "DELETE" });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockDeleteNode).toHaveBeenCalledWith("node-abc");
   });
 });
 
@@ -412,6 +447,79 @@ describe("POST /api/nodes/:id/schedule", () => {
     });
     const res = await app.fetch(req, testEnv);
     expect(res.status).toBe(404);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/nodes/:id/schedule (clear)", () => {
+  beforeEach(() => {
+    mockGetNode.mockReset();
+    mockUpdateNode.mockReset();
+  });
+
+  it("strips the time markup when date is null", async () => {
+    mockGetNode.mockResolvedValue(
+      makeNode({
+        id: "node-abc",
+        name: 'Buy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>',
+      })
+    );
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/schedule", {
+      method: "POST",
+      body: JSON.stringify({ date: null }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { name: "Buy milk" });
+  });
+});
+
+describe("POST /api/nodes/:id/note", () => {
+  beforeEach(() => {
+    mockUpdateNode.mockReset();
+  });
+
+  it("updates the node note", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: "buy at the corner store" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { note: "buy at the corner store" });
+  });
+
+  it("accepts an empty string to clear the note", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: "" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { note: "" });
+  });
+
+  it("rejects a non-string note", async () => {
+    const req = makeRequest("/api/nodes/node-abc/note", {
+      method: "POST",
+      body: JSON.stringify({ note: 42 }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(400);
     expect(mockUpdateNode).not.toHaveBeenCalled();
   });
 });

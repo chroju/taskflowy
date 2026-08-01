@@ -34,7 +34,8 @@ npm run test:ui    # vitest UI起動
 - `api/handlers.ts` - APIエンドポイント実装。認証、タスク操作、送信先ノード一覧、Push購読/通知設定など
 - `api/workflowy-v1.ts` - Workflowy API v1クライアント
 - `api/crypto.ts` - APIキーの暗号化/復号化
-- `api/tasks.ts` - `nodes-export`のフラットなノード配列からタスク（未完了・layoutMode=todo）を抽出
+- `api/tasks.ts` - `nodes-export`のフラットなノード配列からタスク（layoutMode=todo）を抽出。
+  デフォルトは未完了のみ、`includeCompleted`オプションで完了済みも含める（`/api/tasks`が使用）
 - `api/time-markup.ts` - ノード名に埋め込む`<time>`マークアップのパース/生成
 - `api/jst.ts` - JST（UTC+9固定）の日付/時刻ユーティリティ。Dateのロケール依存メソッドは使わない
 - `api/notify.ts` - `selectDueNotifications`: 通知対象タスクを判定する純粋関数
@@ -45,19 +46,29 @@ npm run test:ui    # vitest UI起動
 
 ### Frontend (public/)
 - `scripts/client.js` - UIロジック（DOM操作、イベントバインド）。LocalStorageで設定保存、APIとの通信
-- `scripts/tasks.js` - タスク一覧の純粋ロジック（グルーピング・日付フォーマット・スワイプ判定など）。DOM非依存でユニットテスト可能
+- `scripts/tasks.js` - タスク一覧の純粋ロジック（Today/Deadlines/Nodesのグルーピング・タイトル正規化・
+  日付フォーマット・スワイプ判定など）。DOM非依存でユニットテスト可能（`src/test/task-view.test.ts`）
 - `scripts/utils.js` - `escapeHtml` / `stripHtml`のみ（Jotflowy由来の自由記述編集系ヘルパーは不要なため削除済み）
-- `styles/main.css` - スタイル（night ink potテーマ、Jotflowyと共通のCSS変数を使用）
+- `styles/main.css` - スタイル（Catppuccin Macchiatoテーマ。トークンは`design_handoff_workflowy_tasks`の
+  ハンドオフ資料が正。フォントはBarlow / Barlow Condensed）
 
 ### Server Components (src/components/)
-- `layouts/BaseLayout.tsx` - HTMLベーステンプレート（PWA設定含む）
-- `pages/MainPage.tsx` - メインUIのJSX（サーバーサイドレンダリング）。タブなしの単独タスク画面
+- `layouts/BaseLayout.tsx` - HTMLベーステンプレート（PWA設定、Google Fonts読み込み含む）
+- `pages/MainPage.tsx` - メインUIのJSX（サーバーサイドレンダリング）。Today/Deadlines/Nodesの3タブ、
+  詳細シート・追加シート・全画面設定の骨格を持つ
 
 ## Key Concepts
 
 - **認証**: APIキーはHTTP-only Cookieに暗号化して保存（Jotflowyと同方式。saltはアプリ固有）
 - **タスク取得**: 検索APIが無いため`GET /nodes-export`（1req/min制限）を使用し、Worker側で
-  `layoutMode: "todo"`かつ未完了のノードを抽出する。クライアントは60秒TTLのキャッシュを持つ
+  `layoutMode: "todo"`のノードを抽出する。`/api/tasks`はNodesタブの進捗表示（done/total）のため
+  完了済みも`completed`フラグ付きで返す。Cron通知は未完了のみ対象。クライアントは60秒TTLのキャッシュを持つ
+- **タスク操作**: 行の右スワイプ=完了トグル、左スワイプ=削除（確認シートを挟んで
+  `DELETE /api/nodes/:id`）、
+  行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。期限は詳細シートの
+  「明日へ/来週へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）、
+  メモはメモ行タップで編集（`POST /api/nodes/:id/note`）。追加シートはチップに加えて
+  任意の日付/時刻を指定可能
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **Destination**: `type: "node" | "calendar"`。タスクの追加先。`calendar`は

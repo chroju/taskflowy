@@ -9,40 +9,53 @@ export interface TaskLike {
   parentId?: string | null;
   parentPath?: string[];
   createdAt?: number;
+  completed?: boolean;
   [key: string]: unknown;
 }
 
 export interface TaskGroup<T> {
   key: string;
   label: string;
+  overdue: boolean;
   tasks: T[];
 }
 
-export interface ParentTaskGroup<T> extends TaskGroup<T> {
-  path: string[];
+export interface NodeSummary<T> {
+  key: string;
+  label: string;
+  total: number;
+  done: number;
+  hasOverdue: boolean;
+  tasks: T[];
 }
 
 export function localDateString(date?: Date): string;
 export function addDays(dateStr: string, days: number): string;
 export function nextMonday(dateStr: string): string;
-export function formatDueBadge(due: TaskDue | null): string;
-export function formatCreatedAt(createdAtSec: number): string;
 
-export const DUE_SECTIONS: string[];
-export const DUE_SECTION_LABELS: Record<string, string>;
+export function normalizeTitle(raw: string | null | undefined): string;
+
+export function formatDueShort(due: TaskDue | null, todayStr?: string): string;
+export function formatDueDetail(due: TaskDue | null, todayStr?: string): string;
+export function formatHeaderDate(dateStr?: string): string;
+export function formatSyncAgo(nowMs: number, syncMs: number | null): string;
+
 export function classifyDue(due: TaskDue | null, todayStr?: string): string;
 export function compareDue(a: { due?: TaskDue | null }, b: { due?: TaskDue | null }): number;
-export function groupByDue<T extends TaskLike>(tasks: T[], todayStr?: string): TaskGroup<T>[];
+export function groupTasksForView<T extends TaskLike>(
+  tasks: T[],
+  view: "today" | "due",
+  todayStr?: string
+): TaskGroup<T>[];
 
-export function groupByParent<T extends TaskLike>(tasks: T[]): ParentTaskGroup<T>[];
-
-export const CREATED_SECTIONS: string[];
-export const CREATED_SECTION_LABELS: Record<string, string>;
-export function groupByCreated<T extends TaskLike>(tasks: T[], todayStr?: string): TaskGroup<T>[];
+export function summarizeNodes<T extends TaskLike>(tasks: T[], todayStr?: string): NodeSummary<T>[];
+export function groupNodeTasks<T extends TaskLike>(tasks: T[]): TaskGroup<T>[];
+export function donutDash(done: number, total: number): string;
 
 export function workflowyUrl(nodeId: string): string;
 
 export function swipeDirection(dx: number, dy: number, threshold?: number): "horizontal" | "vertical" | null;
-export function resolveSwipeAction(dx: number, threshold?: number): "complete" | "schedule" | null;
+export function resolveSwipeAction(dx: number, threshold?: number): "complete" | "delete" | null;
+export function clampDx(dx: number, max?: number): number;
 
-export function scheduleShortcut(option: string, todayStr?: string): TaskDue | null;
+export function dueShortcut(option: string, todayStr?: string): { date: string } | null;

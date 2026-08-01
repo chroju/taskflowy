@@ -12,6 +12,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     parentPath: [],
     createdAt: 0,
     due: null,
+    completed: false,
     ...overrides,
   };
 }

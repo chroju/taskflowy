@@ -1,177 +1,159 @@
 import type { FC } from "hono/jsx";
 
+// Lucide "settings" gear (stroke-width 1.5), inlined per the design handoff.
+const GearIcon: FC = () => (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <circle cx="12" cy="12" r="3"></circle>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+  </svg>
+);
+
 export const MainPage: FC = () => (
   <div id="app">
     <div id="toast" class="toast hidden"></div>
 
-    <div id="view-tasks" class="view">
-      <main class="main">
-        <div class="tasks-toolbar">
-          <div id="task-group-tabs" class="segmented" role="tablist">
-            <button class="segmented-item" data-group="due" role="tab">Due</button>
-            <button class="segmented-item" data-group="parent" role="tab">Parent</button>
-            <button class="segmented-item" data-group="created" role="tab">Created</button>
-          </div>
-          <button id="btn-refresh-tasks" class="btn-refresh-tasks" title="Refresh">
-            <iconify-icon icon="heroicons:arrow-path" width="18" height="18"></iconify-icon>
-          </button>
-          <button id="btn-settings" class="btn" title="Settings">
-            <iconify-icon icon="heroicons:cog-6-tooth" width="22" height="22"></iconify-icon>
-          </button>
-        </div>
-        <div id="task-list" class="task-list">
-          <p class="text-muted">Loading...</p>
-        </div>
-      </main>
+    <div class="statusbar">
+      <span id="header-date"></span>
+    </div>
 
-      {/* Add task FAB */}
-      <button id="btn-add-task" class="btn-compose-fab" title="New task">
-        <iconify-icon icon="heroicons:plus" width="26" height="26"></iconify-icon>
+    <header class="header">
+      <div class="header-text">
+        <button id="btn-back" class="header-back hidden">‹ Nodes</button>
+        <h1 id="screen-title">Today</h1>
+        <div id="screen-count" class="screen-count"></div>
+      </div>
+      <button id="btn-settings" class="btn-gear" title="設定">
+        <GearIcon />
       </button>
+    </header>
+
+    <div class="tabbar" id="tabbar" role="tablist">
+      <button class="tab" data-tab="today" role="tab">Today</button>
+      <button class="tab" data-tab="due" role="tab">Deadlines</button>
+      <button class="tab" data-tab="nodes" role="tab">Nodes</button>
     </div>
 
-    {/* Undo toast for task completion */}
-    <div id="undo-toast" class="undo-toast hidden">
-      <span id="undo-toast-message">Task completed</span>
-      <button id="btn-undo" class="undo-toast-action">Undo</button>
-    </div>
+    <main id="task-list" class="task-list"></main>
 
-    {/* Settings Modal */}
-    <div id="modal-settings" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Settings</h2>
-          <button class="modal-close" data-close-modal="modal-settings">&times;</button>
+    <button id="btn-add-task" class="fab" title="新しいタスク">+</button>
+
+    {/* 詳細シート（行タップ） */}
+    <div id="sheet-task" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-task"></div>
+      <div class="sheet-panel">
+        <div class="sheet-grabber"></div>
+        <div id="sheet-task-title" class="sheet-title"></div>
+        <div class="sheet-props">
+          <span class="sheet-prop-label">期限</span>
+          <span id="sheet-task-due" class="sheet-prop-value sheet-due"></span>
+          <span class="sheet-prop-label">ノード</span>
+          <span id="sheet-task-node" class="sheet-prop-value"></span>
+          <span class="sheet-prop-label">メモ</span>
+          <span id="sheet-task-note" class="sheet-prop-value sheet-note"></span>
         </div>
-        <div class="modal-body">
-          <details class="settings-section">
-            <summary class="settings-summary"><h3>API Key</h3></summary>
-            <div class="settings-content">
-              <div class="input-group">
-                <input id="api-key-input" type="password" placeholder="Workflowy API Key" class="input" />
-                <button id="btn-save-apikey" class="btn btn-small btn-primary">Save</button>
-                <button id="btn-clear-apikey" class="btn btn-small hidden">Clear</button>
-                <button id="btn-edit-apikey" class="btn btn-small hidden">Edit</button>
-              </div>
-              <p class="text-muted text-small">
-                <a href="https://workflowy.com/api-key" target="_blank" rel="noopener">Get your API key</a>
-              </p>
-              <p class="text-muted text-small">
-                WARN: Your API key and data are processed by this server. <a href="https://github.com/chroju/taskflowy" target="_blank" rel="noopener">Deploy your own</a> for full privacy.
-              </p>
-            </div>
-          </details>
-
-          <details class="settings-section">
-            <summary class="settings-summary"><h3>Notifications</h3></summary>
-            <div class="settings-content">
-              <p id="notification-status" class="text-muted text-small">Checking status…</p>
-              <div class="btn-group">
-                <button id="btn-enable-notifications" class="btn btn-small btn-primary">Enable</button>
-                <button id="btn-disable-notifications" class="btn btn-small hidden">Disable</button>
-                <button id="btn-test-notification" class="btn btn-small hidden">Send test</button>
-              </div>
-              <div class="input-group">
-                <label class="input-label" for="notification-hour-input">Daily reminder time (JST)</label>
-                <input id="notification-hour-input" type="number" min="0" max="23" class="input" />
-                <button id="btn-save-notification-hour" class="btn btn-small">Save</button>
-              </div>
-              <p class="text-muted text-small">
-                Tasks with a specific time notify when that time passes. Date-only tasks
-                are bundled into one notification at the hour above (JST).
-              </p>
-            </div>
-          </details>
-
-          <details class="settings-section" open>
-            <summary class="settings-summary"><h3>Destinations</h3></summary>
-            <div class="settings-content">
-              <div id="destination-list" class="destination-list"></div>
-              <button id="btn-add-destination" class="btn btn-small">+ Add destination</button>
-
-              {/* Add destination sub-panel */}
-              <div id="panel-add-destination" class="sub-panel hidden">
-                <h3>Add Destination</h3>
-                <div class="checkbox-group" id="dest-type-group">
-                  <label>
-                    <input type="radio" name="dest-type" value="node" checked />
-                    Node
-                  </label>
-                  <label>
-                    <input type="radio" name="dest-type" value="calendar" />
-                    Calendar (Daily Note)
-                  </label>
-                </div>
-                <div id="node-tree" class="node-tree">
-                  <p class="text-muted">Loading nodes...</p>
-                </div>
-                <div class="input-group">
-                  <input id="dest-name-input" type="text" placeholder="Display name" class="input" />
-                </div>
-                <div class="btn-group">
-                  <button id="btn-save-destination" class="btn btn-primary btn-small">Save</button>
-                  <button id="btn-cancel-destination" class="btn btn-small">Cancel</button>
-                </div>
-              </div>
-            </div>
-          </details>
+        <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
+          <span>Workflowy で開く</span>
+          <span class="sheet-link-arrow">↗</span>
+        </a>
+        <div class="sheet-actions">
+          <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
+          <button id="btn-snooze-week" class="sheet-action">来週へ</button>
+          <button id="btn-sheet-complete" class="sheet-action primary">完了</button>
         </div>
       </div>
     </div>
 
-    {/* Add Task Modal */}
-    <div id="modal-add-task" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>New task</h2>
-          <button class="modal-close" data-close-modal="modal-add-task">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="input-group">
-            <input id="task-name-input" type="text" placeholder="Task name" class="input" />
-          </div>
-          <div class="input-group">
-            <button id="task-destination-selector" class="destination-selector" title="Change destination">
-              <iconify-icon class="destination-icon" icon="heroicons:map-pin" width="15" height="15"></iconify-icon>
-              <span id="task-destination-label">No destination</span>
-              <iconify-icon class="destination-chevron" icon="heroicons:chevron-down" width="14" height="14"></iconify-icon>
-            </button>
-            <div id="task-destination-dropdown" class="destination-dropdown hidden"></div>
-          </div>
-          <button id="btn-save-task" class="btn btn-send">
-            <iconify-icon icon="heroicons:paper-airplane" width="18" height="18"></iconify-icon>
-            Add
-          </button>
+    {/* 追加シート（FAB） */}
+    <div id="sheet-add" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-add"></div>
+      <div class="sheet-panel sheet-panel-add">
+        <input id="task-name-input" type="text" class="sheet-input" placeholder="新しいタスク" autocomplete="off" />
+        <div class="sheet-chip-row">
+          <button class="chip due-chip" data-due="today">今日</button>
+          <button class="chip due-chip" data-due="tomorrow">明日</button>
+          <button class="chip due-chip" data-due="week">来週</button>
+          <button class="chip due-chip" data-due="none">期限なし</button>
+          <button id="btn-save-task" class="chip-submit">追加</button>
         </div>
       </div>
     </div>
 
-    {/* Schedule Bottom Sheet */}
-    <div id="modal-schedule" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Schedule</h2>
-          <button class="modal-close" data-close-modal="modal-schedule">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="schedule-shortcuts">
-            <button class="btn schedule-shortcut" data-shortcut="today">Today</button>
-            <button class="btn schedule-shortcut" data-shortcut="tomorrow">Tomorrow</button>
-            <button class="btn schedule-shortcut" data-shortcut="nextMonday">Next Week</button>
+    {/* 設定（全画面） */}
+    <div id="screen-settings" class="settings hidden">
+      <div class="statusbar">
+        <span id="settings-date"></span>
+      </div>
+      <div class="header">
+        <h1>設定</h1>
+        <button id="btn-close-settings" class="btn-close" title="閉じる">✕</button>
+      </div>
+
+      <div class="settings-cards">
+        <section class="card">
+          <div class="card-title">アカウント</div>
+          <div id="apikey-view" class="card-row">
+            <div class="apikey-masked">••••••••</div>
+            <button id="btn-edit-apikey" class="btn-outline">変更</button>
           </div>
-          <div class="input-group">
-            <label class="input-label" for="schedule-date-input">Custom date</label>
-            <input id="schedule-date-input" type="date" class="input" />
+          <div id="apikey-edit" class="card-row hidden">
+            <input id="api-key-input" type="password" class="settings-input" placeholder="Workflowy API Key" />
+            <button id="btn-save-apikey" class="btn-outline">保存</button>
           </div>
-          <div class="input-group">
-            <label class="input-label" for="schedule-time-input">Time (optional)</label>
-            <input id="schedule-time-input" type="time" class="input" />
+          <p class="card-note">
+            API キーとデータはこのサーバーで処理されます。
+            <a href="https://workflowy.com/api-key" target="_blank" rel="noopener">API キーを取得</a>
+            <span> ／ </span>
+            <button id="btn-clear-apikey" class="link-button hidden">クリア</button>
+          </p>
+        </section>
+
+        <section class="card">
+          <div class="card-row space-between">
+            <div class="card-title">通知</div>
+            <button id="btn-toggle-notifications" class="pill">有効にする</button>
           </div>
-          <button id="btn-confirm-schedule" class="btn btn-primary btn-send">Set Due Date</button>
-        </div>
+          <p class="card-desc">時刻つきのタスクはその時刻に、日付だけのタスクは下のリマインド時刻にまとめて通知します。</p>
+          <p id="notification-status" class="card-note hidden"></p>
+          <div id="reminder-hours" class="chip-row"></div>
+          <button id="btn-test-notification" class="link-button hidden">テスト通知を送る</button>
+        </section>
+
+        <section class="card">
+          <div class="card-title">同期</div>
+          <div class="card-row space-between">
+            <span id="sync-label" class="card-desc-inline">未同期</span>
+            <button id="btn-sync-now" class="btn-outline">今すぐ同期</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">保存先</div>
+          <div id="destination-list" class="destination-list"></div>
+          <button id="btn-add-destination" class="btn-dashed">＋ 保存先を追加</button>
+
+          <div id="panel-add-destination" class="dest-panel hidden">
+            <div class="radio-group" id="dest-type-group">
+              <label>
+                <input type="radio" name="dest-type" value="node" checked />
+                ノード
+              </label>
+              <label>
+                <input type="radio" name="dest-type" value="calendar" />
+                カレンダー（Daily Note）
+              </label>
+            </div>
+            <div id="node-tree" class="node-tree">
+              <p class="tree-empty">読み込み中...</p>
+            </div>
+            <div class="input-group">
+              <input id="dest-name-input" type="text" class="settings-input" placeholder="表示名" />
+            </div>
+            <div class="card-row">
+              <button id="btn-save-destination" class="btn-fill">保存</button>
+              <button id="btn-cancel-destination" class="btn-outline">キャンセル</button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </div>

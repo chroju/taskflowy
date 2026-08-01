@@ -1,86 +1,110 @@
-import { escapeHtml, stripHtml } from "./utils.js";
+import { stripHtml } from "./utils.js";
 import {
   localDateString,
-  formatDueBadge,
-  groupByDue,
-  groupByParent,
-  groupByCreated,
+  normalizeTitle,
+  formatDueShort,
+  formatDueDetail,
+  formatHeaderDate,
+  formatSyncAgo,
+  classifyDue,
+  groupTasksForView,
+  summarizeNodes,
+  groupNodeTasks,
+  donutDash,
   workflowyUrl,
   swipeDirection,
   resolveSwipeAction,
-  scheduleShortcut,
+  clampDx,
+  dueShortcut,
 } from "./tasks.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
-// State
+// ==================== State ====================
+
 let settings = loadSettings();
 let isAuthenticated = false;
+let tab = "today"; // 'today' | 'due' | 'nodes'
+let selectedNodeKey = null; // Nodes drilldown; cleared on tab switch
+let tasksState = []; // includes completed todos (for node progress)
+let lastSyncMs = null;
+let sheetTask = null; // task shown in the detail sheet
+let addDue = "today"; // selected chip in the add sheet
 
-// DOM elements
-const toast = document.getElementById("toast");
-const btnSettings = document.getElementById("btn-settings");
+const REMINDER_HOURS = [7, 8, 9, 10, 21];
+const TAB_TITLES = { today: "Today", due: "Deadlines", nodes: "Nodes" };
 
-// Settings modal
-const modalSettings = document.getElementById("modal-settings");
-const apiKeyInput = document.getElementById("api-key-input");
-const btnSaveApikey = document.getElementById("btn-save-apikey");
-const btnClearApikey = document.getElementById("btn-clear-apikey");
-const btnEditApikey = document.getElementById("btn-edit-apikey");
-const destinationList = document.getElementById("destination-list");
-const btnAddDestination = document.getElementById("btn-add-destination");
+// ==================== DOM ====================
 
-// Add destination panel
-const panelAddDest = document.getElementById("panel-add-destination");
-const nodeTree = document.getElementById("node-tree");
-const destNameInput = document.getElementById("dest-name-input");
+const $ = (id) => document.getElementById(id);
+
+const toast = $("toast");
+const headerDate = $("header-date");
+const settingsDate = $("settings-date");
+const btnBack = $("btn-back");
+const screenTitle = $("screen-title");
+const screenCount = $("screen-count");
+const btnSettings = $("btn-settings");
+const tabbar = $("tabbar");
+const taskList = $("task-list");
+const btnAddTask = $("btn-add-task");
+
+const sheetTaskEl = $("sheet-task");
+const sheetTaskTitle = $("sheet-task-title");
+const sheetTaskDue = $("sheet-task-due");
+const sheetTaskNode = $("sheet-task-node");
+const sheetTaskNote = $("sheet-task-note");
+const sheetTaskLink = $("sheet-task-link");
+const btnSnoozeTomorrow = $("btn-snooze-tomorrow");
+const btnSnoozeWeek = $("btn-snooze-week");
+const btnSheetComplete = $("btn-sheet-complete");
+
+const sheetAddEl = $("sheet-add");
+const taskNameInput = $("task-name-input");
+const btnSaveTask = $("btn-save-task");
+
+const screenSettings = $("screen-settings");
+const btnCloseSettings = $("btn-close-settings");
+const apikeyView = $("apikey-view");
+const apikeyEdit = $("apikey-edit");
+const apiKeyInput = $("api-key-input");
+const btnEditApikey = $("btn-edit-apikey");
+const btnSaveApikey = $("btn-save-apikey");
+const btnClearApikey = $("btn-clear-apikey");
+const btnToggleNotifications = $("btn-toggle-notifications");
+const notificationStatus = $("notification-status");
+const reminderHoursEl = $("reminder-hours");
+const btnTestNotification = $("btn-test-notification");
+const syncLabel = $("sync-label");
+const btnSyncNow = $("btn-sync-now");
+const destinationList = $("destination-list");
+const btnAddDestination = $("btn-add-destination");
+const panelAddDest = $("panel-add-destination");
+const nodeTree = $("node-tree");
+const destNameInput = $("dest-name-input");
 const destTypeRadios = document.querySelectorAll('input[name="dest-type"]');
-const btnSaveDestination = document.getElementById("btn-save-destination");
-const btnCancelDestination = document.getElementById("btn-cancel-destination");
+const btnSaveDestination = $("btn-save-destination");
+const btnCancelDestination = $("btn-cancel-destination");
 
-let selectedNodeId = null;
+let selectedTreeNodeId = null;
+let nodeTreePath = []; // [{ id, name }] breadcrumb trail
+let pushSubscribed = false;
+let reminderHour = null;
 
-// Notifications
-const notificationStatus = document.getElementById("notification-status");
-const btnEnableNotifications = document.getElementById("btn-enable-notifications");
-const btnDisableNotifications = document.getElementById("btn-disable-notifications");
-const btnTestNotification = document.getElementById("btn-test-notification");
-const notificationHourInput = document.getElementById("notification-hour-input");
-const btnSaveNotificationHour = document.getElementById("btn-save-notification-hour");
+// ==================== Init ====================
 
-// Task view
-const taskList = document.getElementById("task-list");
-const taskGroupTabs = document.getElementById("task-group-tabs");
-const btnAddTask = document.getElementById("btn-add-task");
-const modalAddTask = document.getElementById("modal-add-task");
-const taskNameInput = document.getElementById("task-name-input");
-const taskDestinationSelector = document.getElementById("task-destination-selector");
-const taskDestinationLabel = document.getElementById("task-destination-label");
-const taskDestinationDropdown = document.getElementById("task-destination-dropdown");
-const btnSaveTask = document.getElementById("btn-save-task");
-const modalSchedule = document.getElementById("modal-schedule");
-const scheduleDateInput = document.getElementById("schedule-date-input");
-const scheduleTimeInput = document.getElementById("schedule-time-input");
-const btnConfirmSchedule = document.getElementById("btn-confirm-schedule");
-const undoToast = document.getElementById("undo-toast");
-const undoToastMessage = document.getElementById("undo-toast-message");
-const btnUndo = document.getElementById("btn-undo");
-const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
-
-let taskDestinationId = settings.selectedDestinationId;
-let scheduleTargetTaskId = null;
-let tasksState = []; // in-memory task list, kept in sync with cache
-let taskGrouping = loadTaskGrouping();
-let undoTimer = null;
-let undoData = null; // { task } for the last completed task
-
-// Init
 async function init() {
+  const today = formatHeaderDate();
+  headerDate.textContent = today;
+  settingsDate.textContent = today;
   bindEvents();
-  bindTaskEvents();
-  bindNotificationEvents();
+  bindSettingsEvents();
   setupMobileViewport();
   registerServiceWorker();
   await checkAuth();
+  if (!isAuthenticated) {
+    openSettings();
+  }
+  render();
   loadTasks();
 }
 
@@ -96,94 +120,8 @@ function setupMobileViewport() {
   }
 }
 
-function bindEvents() {
-  btnSettings.addEventListener("click", () => {
-    updateApiKeyUI();
-    renderDestinationList();
-    refreshNotificationUI();
-    openModal(modalSettings);
-  });
+// ==================== Settings persistence ====================
 
-  btnSaveApikey.addEventListener("click", async () => {
-    const key = apiKeyInput.value.trim();
-    if (!key) return;
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: key }),
-      });
-      if (!res.ok) throw new Error("Failed to save API key");
-      isAuthenticated = true;
-      updateApiKeyUI();
-      showToast("API key saved");
-      loadTasks(true);
-    } catch (e) {
-      showToast(e.message, true);
-    }
-  });
-
-  btnClearApikey.addEventListener("click", async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      isAuthenticated = false;
-      updateApiKeyUI();
-      showToast("API key cleared");
-    } catch (e) {
-      showToast(e.message, true);
-    }
-  });
-
-  btnEditApikey.addEventListener("click", () => {
-    apiKeyInput.value = "";
-    apiKeyInput.disabled = false;
-    apiKeyInput.placeholder = "Enter new API key";
-    btnSaveApikey.classList.remove("hidden");
-    btnEditApikey.classList.add("hidden");
-    btnClearApikey.classList.remove("hidden");
-    apiKeyInput.focus();
-  });
-
-  btnAddDestination.addEventListener("click", () => {
-    panelAddDest.classList.remove("hidden");
-    selectedNodeId = null;
-    nodeTreePath = [];
-    destNameInput.value = "";
-    setDestType("node");
-    loadNodeTree();
-  });
-
-  destTypeRadios.forEach((radio) => {
-    radio.addEventListener("change", () => updateDestTypeUI(getDestType()));
-  });
-
-  btnSaveDestination.addEventListener("click", saveDestination);
-  btnCancelDestination.addEventListener("click", () => panelAddDest.classList.add("hidden"));
-
-  document.querySelectorAll(".modal-backdrop").forEach((el) => {
-    el.addEventListener("click", () => el.closest(".modal").classList.add("hidden"));
-  });
-
-  document.querySelectorAll("[data-close-modal]").forEach((el) => {
-    el.addEventListener("click", () => {
-      document.getElementById(el.dataset.closeModal).classList.add("hidden");
-    });
-  });
-}
-
-// Destination naming (calendar destinations get a marker icon)
-const calendarTypeIcon = `<svg class="dest-type-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="3" y="4" width="18" height="18" rx="2" />
-  <line x1="16" y1="2" x2="16" y2="6" />
-  <line x1="8" y1="2" x2="8" y2="6" />
-  <line x1="3" y1="10" x2="21" y2="10" />
-</svg>`;
-
-function destinationNameHtml(dest) {
-  return `${dest.type === "calendar" ? calendarTypeIcon : ""}${escapeHtml(dest.name)}`;
-}
-
-// Settings persistence
 function loadSettings() {
   try {
     const raw = localStorage.getItem("taskflowy_settings");
@@ -196,7 +134,8 @@ function saveSettings() {
   localStorage.setItem("taskflowy_settings", JSON.stringify(settings));
 }
 
-// Auth check
+// ==================== Auth / API ====================
+
 async function checkAuth() {
   try {
     const res = await fetch("/api/auth/check");
@@ -207,29 +146,9 @@ async function checkAuth() {
   }
 }
 
-// Update API Key UI based on auth state
-function updateApiKeyUI() {
-  if (isAuthenticated) {
-    apiKeyInput.value = "••••••••";
-    apiKeyInput.disabled = true;
-    apiKeyInput.placeholder = "";
-    btnSaveApikey.classList.add("hidden");
-    btnClearApikey.classList.add("hidden");
-    btnEditApikey.classList.remove("hidden");
-  } else {
-    apiKeyInput.value = "";
-    apiKeyInput.disabled = false;
-    apiKeyInput.placeholder = "Workflowy API Key";
-    btnSaveApikey.classList.remove("hidden");
-    btnClearApikey.classList.add("hidden");
-    btnEditApikey.classList.add("hidden");
-  }
-}
-
-// API helpers
 async function apiRequest(path, options = {}) {
   if (!isAuthenticated) {
-    throw new Error("Not authenticated. Open settings to set your API key.");
+    throw new Error("API キーが未設定です。設定から登録してください。");
   }
   const res = await fetch(`/api${path}`, {
     ...options,
@@ -246,139 +165,658 @@ async function apiRequest(path, options = {}) {
   return res.json();
 }
 
-// Node tree for destination selection
-let nodeTreePath = []; // [{ id, name }] breadcrumb trail
+// ==================== Task cache ====================
 
-async function loadNodeTree(parentId) {
-  nodeTree.innerHTML = '<div class="spinner"></div>';
+const TASKS_CACHE_KEY = "taskflowy_tasks_cache";
+const TASKS_CACHE_TTL_MS = 60 * 1000;
+
+function getTasksCache() {
   try {
-    const pid = parentId || "None";
-    const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
-    renderNodeTree(nodes);
-  } catch (e) {
-    nodeTree.innerHTML = `<p class="text-muted">${escapeHtml(e.message)}</p>`;
+    const raw = localStorage.getItem(TASKS_CACHE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || !Array.isArray(entry.tasks)) return null;
+    return entry;
+  } catch {
+    return null;
   }
 }
 
-function renderNodeTree(nodes) {
-  nodeTree.innerHTML = "";
+function setTasksCache(tasks) {
+  try {
+    localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify({ tasks, timestamp: lastSyncMs || Date.now() }));
+  } catch {}
+}
 
-  // Breadcrumb navigation
-  if (nodeTreePath.length > 0) {
-    const breadcrumb = document.createElement("div");
-    breadcrumb.className = "node-tree-breadcrumb";
-
-    const rootLink = document.createElement("span");
-    rootLink.className = "breadcrumb-link";
-    rootLink.textContent = "Home";
-    rootLink.addEventListener("click", () => {
-      nodeTreePath = [];
-      selectedNodeId = null;
-      destNameInput.value = "";
-      loadNodeTree();
-    });
-    breadcrumb.appendChild(rootLink);
-
-    for (let i = 0; i < nodeTreePath.length; i++) {
-      const sep = document.createElement("span");
-      sep.className = "breadcrumb-sep";
-      sep.textContent = " / ";
-      breadcrumb.appendChild(sep);
-
-      const crumb = nodeTreePath[i];
-      if (i < nodeTreePath.length - 1) {
-        const link = document.createElement("span");
-        link.className = "breadcrumb-link";
-        link.textContent = crumb.name;
-        link.addEventListener("click", () => {
-          nodeTreePath = nodeTreePath.slice(0, i + 1);
-          selectedNodeId = crumb.id;
-          destNameInput.value = crumb.name;
-          loadNodeTree(crumb.id);
-        });
-        breadcrumb.appendChild(link);
-      } else {
-        const current = document.createElement("span");
-        current.className = "breadcrumb-current";
-        current.textContent = crumb.name;
-        breadcrumb.appendChild(current);
-      }
-    }
-
-    nodeTree.appendChild(breadcrumb);
+// Load tasks: show cache immediately (stale-while-revalidate), skip the
+// network round trip entirely if the cache is fresh (<60s old).
+// force=true (今すぐ同期) bypasses the freshness check; the server still
+// returns 429 if Workflowy's 1 req/min export limit is hit.
+let tasksLoading = false;
+async function loadTasks(force = false) {
+  if (tasksLoading || !isAuthenticated) return;
+  const cache = getTasksCache();
+  if (cache) {
+    tasksState = cache.tasks;
+    lastSyncMs = cache.timestamp;
+    render();
+    const age = Date.now() - cache.timestamp;
+    if (!force && age < TASKS_CACHE_TTL_MS) return;
+  } else {
+    taskList.innerHTML = '<div class="list-loading"><div class="spinner"></div></div>';
   }
 
-  if (!nodes.length) {
-    const msg = document.createElement("p");
-    msg.className = "text-muted";
-    msg.textContent = "No child nodes";
-    nodeTree.appendChild(msg);
+  tasksLoading = true;
+  btnSyncNow.disabled = true;
+  try {
+    const data = await apiRequest("/tasks");
+    tasksState = data.tasks;
+    lastSyncMs = Date.now();
+    setTasksCache(tasksState);
+    render();
+  } catch (e) {
+    if (!cache) {
+      taskList.innerHTML = `<p class="list-empty">${escapeText(e.message)}</p>`;
+    } else if (force) {
+      const rateLimited = /API error 429/.test(e.message);
+      showToast(rateLimited ? "同期が制限されています。1分ほど待って再試行してください。" : e.message, true);
+    }
+    // Background refresh errors: keep showing cached/stale view silently
+  } finally {
+    tasksLoading = false;
+    btnSyncNow.disabled = false;
+    renderSyncLabel();
+  }
+}
+
+function escapeText(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ==================== Rendering ====================
+
+function selectedNode() {
+  if (!selectedNodeKey) return null;
+  return summarizeNodes(tasksState).find((n) => n.key === selectedNodeKey) || null;
+}
+
+function render() {
+  const node = tab === "nodes" ? selectedNode() : null;
+  btnBack.classList.toggle("hidden", !node);
+  screenTitle.textContent = node ? node.label : TAB_TITLES[tab];
+
+  tabbar.querySelectorAll(".tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+
+  renderList(node);
+}
+
+function renderList(node) {
+  taskList.innerHTML = "";
+
+  if (!isAuthenticated) {
+    screenCount.textContent = "";
+    taskList.innerHTML = '<p class="list-empty">API キーを設定するとタスクが表示されます。</p>';
     return;
   }
 
-  for (const node of nodes) {
-    const text = stripHtml(node.name || "(untitled)");
-    const div = document.createElement("div");
-    const isCompleted = node.completedAt !== null;
-    div.className = "node-tree-item" + (selectedNodeId === node.id ? " selected" : "") + (isCompleted ? " completed" : "");
+  if (tab === "nodes" && !node) {
+    renderNodeList();
+    return;
+  }
 
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "node-tree-item-name";
-    nameSpan.textContent = text;
-    div.appendChild(nameSpan);
+  const today = localDateString();
+  const groups = node ? groupNodeTasks(node.tasks) : groupTasksForView(tasksState, tab, today);
+  const openCount = groups.reduce((n, g) => n + g.tasks.filter((t) => !t.completed).length, 0);
+  screenCount.textContent = `${openCount} 件`;
 
-    const drillBtn = document.createElement("span");
-    drillBtn.className = "node-tree-drill";
-    drillBtn.textContent = "▶";
-    drillBtn.title = "Show children";
-    div.appendChild(drillBtn);
+  if (!groups.length) {
+    taskList.innerHTML = '<p class="list-empty">タスクはありません</p>';
+    return;
+  }
 
-    // Click name to select
-    nameSpan.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedNodeId = node.id;
-      destNameInput.value = text;
-      nodeTree.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
-      div.classList.add("selected");
-    });
+  for (const group of groups) {
+    const header = document.createElement("div");
+    header.className = "group-header" + (group.overdue ? " overdue" : "");
+    header.innerHTML = `<span class="group-label"></span><span class="group-count"></span>`;
+    header.querySelector(".group-label").textContent = group.label;
+    header.querySelector(".group-count").textContent = String(group.tasks.length);
+    taskList.appendChild(header);
 
-    // Click drill button to navigate into children
-    drillBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedNodeId = node.id;
-      destNameInput.value = text;
-      nodeTreePath.push({ id: node.id, name: text });
-      loadNodeTree(node.id);
-    });
-
-    nodeTree.appendChild(div);
+    for (const task of group.tasks) {
+      taskList.appendChild(buildTaskRow(task, { showParent: !node }));
+    }
   }
 }
 
-// Destination management
-function getDestType() {
-  return document.querySelector('input[name="dest-type"]:checked')?.value || "node";
+function renderNodeList() {
+  const nodes = summarizeNodes(tasksState);
+  screenCount.textContent = `${nodes.length} ノード`;
+
+  if (!nodes.length) {
+    taskList.innerHTML = '<p class="list-empty">タスクはありません</p>';
+    return;
+  }
+
+  const container = document.createElement("div");
+  container.className = "node-list";
+
+  for (const node of nodes) {
+    const row = document.createElement("button");
+    row.className = "node-row";
+    const ring = node.hasOverdue ? "#ee99a0" : "#8aadf4";
+    const track = node.hasOverdue ? "rgba(238,153,160,.28)" : "rgba(202,211,245,.16)";
+    row.innerHTML = `
+      <svg class="node-donut" width="20" height="20" viewBox="0 0 20 20">
+        <circle cx="10" cy="10" r="8" fill="none" stroke="${track}" stroke-width="3"></circle>
+        <circle cx="10" cy="10" r="8" fill="none" stroke="${ring}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${donutDash(node.done, node.total)}"></circle>
+      </svg>
+      <span class="node-name"></span>
+      <span class="node-fraction"></span>
+      <span class="node-chevron">›</span>
+    `;
+    row.querySelector(".node-name").textContent = node.label;
+    row.querySelector(".node-fraction").textContent = `${node.done}/${node.total}`;
+    row.addEventListener("click", () => {
+      selectedNodeKey = node.key;
+      render();
+    });
+    container.appendChild(row);
+  }
+
+  taskList.appendChild(container);
 }
 
-function setDestType(type) {
-  destTypeRadios.forEach((radio) => {
-    radio.checked = radio.value === type;
+function buildTaskRow(task, { showParent }) {
+  const today = localDateString();
+
+  const wrap = document.createElement("div");
+  wrap.className = "task-row-wrap";
+  wrap.dataset.taskId = task.id;
+
+  const underlay = document.createElement("div");
+  underlay.className = "task-row-underlay";
+  underlay.innerHTML = '<span class="underlay-complete">✓ 完了</span><span class="underlay-delete">削除</span>';
+  wrap.appendChild(underlay);
+
+  const row = document.createElement("div");
+  row.className = "task-row";
+
+  const check = document.createElement("button");
+  check.className = "task-check";
+  check.title = "完了/未完了";
+  row.appendChild(check);
+
+  const body = document.createElement("div");
+  body.className = "task-row-body";
+
+  const title = document.createElement("div");
+  title.className = "task-title";
+  title.textContent = normalizeTitle(task.plainName) || "（無題）";
+  body.appendChild(title);
+
+  if (showParent && task.parentPath && task.parentPath.length) {
+    const parent = document.createElement("div");
+    parent.className = "task-parent";
+    parent.textContent = normalizeTitle(task.parentPath[task.parentPath.length - 1]);
+    body.appendChild(parent);
+  }
+  row.appendChild(body);
+
+  // 期限が無い行は右カラムごと出さない（タイトルが横幅いっぱいに伸びる）
+  if (task.due) {
+    const meta = document.createElement("div");
+    meta.className = "task-meta";
+    const due = document.createElement("div");
+    due.className = "task-due";
+    due.textContent = formatDueShort(task.due, today);
+    meta.appendChild(due);
+    row.appendChild(meta);
+  }
+
+  wrap.appendChild(row);
+  applyRowState(row, task);
+
+  check.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleComplete(task, row);
   });
-  updateDestTypeUI(type);
+
+  bindTaskRowSwipe(wrap, row, task);
+  return wrap;
 }
 
-function updateDestTypeUI(type) {
-  // Calendar destinations write to Workflowy's native calendar; there is no
-  // node to pick and the name is fixed to "Daily Note"
-  const isCalendar = type === "calendar";
-  nodeTree.classList.toggle("hidden", isCalendar);
-  destNameInput.closest(".input-group").classList.toggle("hidden", isCalendar);
+function applyRowState(row, task) {
+  const overdue = !task.completed && classifyDue(task.due, localDateString()) === "overdue";
+  row.classList.toggle("done", !!task.completed);
+  row.classList.toggle("overdue", overdue);
+  row.querySelector(".task-check").textContent = task.completed ? "✓" : "";
+}
+
+// ==================== Task actions ====================
+
+async function toggleComplete(task, row) {
+  const target = !task.completed;
+  task.completed = target;
+  if (row) applyRowState(row, task);
+  setTasksCache(tasksState);
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(task.id)}/${target ? "complete" : "uncomplete"}`, {
+      method: "POST",
+    });
+  } catch (e) {
+    task.completed = !target;
+    if (row) applyRowState(row, task);
+    setTasksCache(tasksState);
+    showToast(e.message, true);
+  }
+}
+
+async function deleteTask(task, wrap, row) {
+  wrap.style.maxHeight = `${wrap.offsetHeight}px`;
+  wrap.classList.add("removing");
+  requestAnimationFrame(() => {
+    wrap.style.maxHeight = "0";
+    wrap.style.opacity = "0";
+  });
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(task.id)}`, { method: "DELETE" });
+    tasksState = tasksState.filter((t) => t.id !== task.id);
+    setTasksCache(tasksState);
+    setTimeout(() => wrap.remove(), 220);
+    showToast("削除しました");
+  } catch (e) {
+    wrap.classList.remove("removing");
+    wrap.style.maxHeight = "";
+    wrap.style.opacity = "";
+    row.style.transform = "";
+    showToast(e.message, true);
+  }
+}
+
+async function scheduleTask(task, dateStr) {
+  await apiRequest(`/nodes/${encodeURIComponent(task.id)}/schedule`, {
+    method: "POST",
+    body: JSON.stringify({ date: dateStr }),
+  });
+  task.due = { date: dateStr, time: null };
+  setTasksCache(tasksState);
+  render();
+}
+
+// Touch swipe: right = complete, left = delete. Direction is locked in on
+// the first move past the threshold so vertical scrolling isn't hijacked.
+function bindTaskRowSwipe(wrap, row, task) {
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let direction = null; // "horizontal" | "vertical" | null
+  let dragging = false;
+
+  row.addEventListener(
+    "touchstart",
+    (e) => {
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      dx = 0;
+      direction = null;
+      dragging = false;
+    },
+    { passive: true }
+  );
+
+  row.addEventListener(
+    "touchmove",
+    (e) => {
+      const t = e.touches[0];
+      const curDx = t.clientX - startX;
+      const curDy = t.clientY - startY;
+
+      if (!direction) {
+        direction = swipeDirection(curDx, curDy, 10);
+        if (direction === "vertical") return; // let the page scroll
+      }
+      if (direction !== "horizontal") return;
+
+      dragging = true;
+      e.preventDefault();
+      row.classList.add("dragging");
+      dx = clampDx(curDx);
+      row.style.transform = `translateX(${dx}px)`;
+    },
+    { passive: false }
+  );
+
+  row.addEventListener("touchend", () => {
+    row.classList.remove("dragging");
+    if (dragging) {
+      const action = resolveSwipeAction(dx);
+      if (action === "complete") {
+        snapBack(row);
+        if (!task.completed) toggleComplete(task, row);
+        return;
+      }
+      if (action === "delete") {
+        deleteTask(task, wrap, row);
+        return;
+      }
+    }
+    snapBack(row);
+    direction = null;
+    dragging = false;
+  });
+
+  row.addEventListener("touchcancel", () => {
+    row.classList.remove("dragging");
+    snapBack(row);
+  });
+
+  // Tap (no drag) opens the detail sheet
+  row.addEventListener("click", () => {
+    if (Math.abs(dx) > 4) {
+      dx = 0;
+      return;
+    }
+    openTaskSheet(task);
+  });
+}
+
+function snapBack(row) {
+  row.classList.add("snapping");
+  row.style.transform = "";
+  setTimeout(() => row.classList.remove("snapping"), 200);
+}
+
+// ==================== Detail sheet ====================
+
+function openTaskSheet(task) {
+  sheetTask = task;
+  const today = localDateString();
+
+  sheetTaskTitle.textContent = normalizeTitle(task.plainName) || "（無題）";
+  sheetTaskDue.textContent = formatDueDetail(task.due, today);
+  sheetTaskDue.classList.toggle("overdue", !task.completed && classifyDue(task.due, today) === "overdue");
+  sheetTaskDue.classList.toggle("none", !task.due);
+  sheetTaskNode.textContent = task.parentPath && task.parentPath.length
+    ? normalizeTitle(task.parentPath[task.parentPath.length - 1])
+    : "—";
+  sheetTaskNote.textContent = task.note ? stripHtml(task.note) : "—";
+  sheetTaskLink.href = workflowyUrl(task.id);
+  btnSheetComplete.textContent = task.completed ? "未完了に戻す" : "完了";
+
+  sheetTaskEl.classList.remove("hidden");
+}
+
+function closeSheets() {
+  sheetTaskEl.classList.add("hidden");
+  sheetAddEl.classList.add("hidden");
+  sheetTask = null;
+}
+
+// ==================== Add sheet ====================
+
+function openAddSheet() {
+  taskNameInput.value = "";
+  addDue = "today";
+  renderDueChips();
+  sheetAddEl.classList.remove("hidden");
+  taskNameInput.focus();
+}
+
+function renderDueChips() {
+  sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.due === addDue);
+  });
+}
+
+async function handleAddTask() {
+  const name = taskNameInput.value.trim();
+  if (!name) {
+    closeSheets();
+    return;
+  }
+  const dest = settings.destinations.find((d) => d.id === settings.selectedDestinationId);
+  if (!dest) {
+    showToast("保存先が未設定です。設定から追加してください。", true);
+    return;
+  }
+
+  btnSaveTask.disabled = true;
+  try {
+    const result = await apiRequest("/send", {
+      method: "POST",
+      body: JSON.stringify({
+        targetType: dest.type,
+        parentId: dest.type === "node" ? dest.nodeId : undefined,
+        name,
+        layoutMode: "todo",
+      }),
+    });
+
+    const due = dueShortcut(addDue);
+    if (due && result.item_id) {
+      await apiRequest(`/nodes/${encodeURIComponent(result.item_id)}/schedule`, {
+        method: "POST",
+        body: JSON.stringify({ date: due.date }),
+      });
+    }
+
+    const newTask = {
+      id: result.item_id || `temp-${Date.now()}`,
+      name,
+      plainName: name,
+      note: null,
+      parentId: dest.type === "node" ? dest.nodeId : null,
+      parentPath: dest.type === "node" ? [dest.name] : [],
+      createdAt: Math.floor(Date.now() / 1000),
+      due: due ? { date: due.date, time: null } : null,
+      completed: false,
+    };
+    tasksState = [newTask, ...tasksState];
+    setTasksCache(tasksState);
+    render();
+    closeSheets();
+    showToast("追加しました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSaveTask.disabled = false;
+  }
+}
+
+// ==================== Event binding ====================
+
+function bindEvents() {
+  tabbar.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tab = btn.dataset.tab;
+      selectedNodeKey = null;
+      render();
+    });
+  });
+
+  btnBack.addEventListener("click", () => {
+    selectedNodeKey = null;
+    render();
+  });
+
+  btnSettings.addEventListener("click", openSettings);
+  btnCloseSettings.addEventListener("click", closeSettings);
+
+  btnAddTask.addEventListener("click", openAddSheet);
+
+  document.querySelectorAll("[data-close-sheet]").forEach((el) => {
+    el.addEventListener("click", closeSheets);
+  });
+
+  sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      addDue = chip.dataset.due;
+      renderDueChips();
+    });
+  });
+
+  btnSaveTask.addEventListener("click", handleAddTask);
+  taskNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddTask();
+    }
+  });
+
+  btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
+  btnSnoozeWeek.addEventListener("click", () => snoozeSheetTask("week"));
+
+  btnSheetComplete.addEventListener("click", () => {
+    if (!sheetTask) return;
+    toggleComplete(sheetTask, findRow(sheetTask.id));
+    closeSheets();
+  });
+
+  // Re-fetch when the app returns to the foreground, so edits made in
+  // Workflowy itself show up (60s cache still applies).
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadTasks();
+  });
+}
+
+function findRow(taskId) {
+  const wrap = taskList.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`);
+  return wrap ? wrap.querySelector(".task-row") : null;
+}
+
+async function snoozeSheetTask(option) {
+  if (!sheetTask) return;
+  const due = dueShortcut(option);
+  if (!due) return;
+  const task = sheetTask;
+  closeSheets();
+  try {
+    await scheduleTask(task, due.date);
+    showToast(option === "tomorrow" ? "明日に設定しました" : "来週に設定しました");
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ==================== Settings ====================
+
+function openSettings() {
+  settingsDate.textContent = formatHeaderDate();
+  updateApiKeyUI();
+  renderDestinationList();
+  refreshNotificationUI();
+  renderSyncLabel();
+  screenSettings.classList.remove("hidden");
+}
+
+function closeSettings() {
+  screenSettings.classList.add("hidden");
+}
+
+function updateApiKeyUI() {
+  apikeyView.classList.toggle("hidden", !isAuthenticated);
+  apikeyEdit.classList.toggle("hidden", isAuthenticated);
+  btnClearApikey.classList.toggle("hidden", !isAuthenticated);
+  if (!isAuthenticated) {
+    apiKeyInput.value = "";
+  }
+}
+
+function bindSettingsEvents() {
+  btnEditApikey.addEventListener("click", () => {
+    apikeyView.classList.add("hidden");
+    apikeyEdit.classList.remove("hidden");
+    apiKeyInput.value = "";
+    apiKeyInput.focus();
+  });
+
+  btnSaveApikey.addEventListener("click", async () => {
+    const key = apiKeyInput.value.trim();
+    if (!key) return;
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key }),
+      });
+      if (!res.ok) throw new Error("API キーの保存に失敗しました");
+      isAuthenticated = true;
+      updateApiKeyUI();
+      showToast("API キーを保存しました");
+      render();
+      loadTasks(true);
+    } catch (e) {
+      showToast(e.message, true);
+    }
+  });
+
+  btnClearApikey.addEventListener("click", async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      isAuthenticated = false;
+      updateApiKeyUI();
+      showToast("API キーを削除しました");
+      render();
+    } catch (e) {
+      showToast(e.message, true);
+    }
+  });
+
+  btnSyncNow.addEventListener("click", () => loadTasks(true));
+
+  btnToggleNotifications.addEventListener("click", () => {
+    if (pushSubscribed) {
+      disableNotifications();
+    } else {
+      enableNotifications();
+    }
+  });
+  btnTestNotification.addEventListener("click", sendTestNotification);
+
+  btnAddDestination.addEventListener("click", () => {
+    panelAddDest.classList.remove("hidden");
+    selectedTreeNodeId = null;
+    nodeTreePath = [];
+    destNameInput.value = "";
+    setDestType("node");
+    loadNodeTree();
+  });
+
+  destTypeRadios.forEach((radio) => {
+    radio.addEventListener("change", () => updateDestTypeUI(getDestType()));
+  });
+
+  btnSaveDestination.addEventListener("click", saveDestination);
+  btnCancelDestination.addEventListener("click", () => panelAddDest.classList.add("hidden"));
+}
+
+function renderSyncLabel() {
+  syncLabel.textContent = formatSyncAgo(Date.now(), lastSyncMs);
+}
+
+// ==================== Destinations ====================
+
+// Destination naming (calendar destinations get a marker icon)
+const calendarTypeIcon = `<svg class="dest-type-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3" y="4" width="18" height="18" rx="2" />
+  <line x1="16" y1="2" x2="16" y2="6" />
+  <line x1="8" y1="2" x2="8" y2="6" />
+  <line x1="3" y1="10" x2="21" y2="10" />
+</svg>`;
+
+function destinationNameHtml(dest) {
+  return `${dest.type === "calendar" ? calendarTypeIcon : ""}${escapeText(dest.name)}`;
 }
 
 function renderDestinationList() {
   destinationList.innerHTML = "";
   if (!settings.destinations.length) {
-    destinationList.innerHTML = '<p class="text-muted">No destinations configured</p>';
+    destinationList.innerHTML = '<p class="destination-empty">未設定</p>';
     return;
   }
   for (const dest of settings.destinations) {
@@ -387,7 +825,7 @@ function renderDestinationList() {
     div.className = "destination-item" + (isActive ? " active" : "");
     div.innerHTML = `
       <span class="destination-item-name">${destinationNameHtml(dest)}</span>
-      <button class="destination-item-delete" data-id="${dest.id}">&times;</button>
+      <button class="destination-item-delete" title="削除">&times;</button>
     `;
     div.addEventListener("click", (e) => {
       if (e.target.closest(".destination-item-delete")) return;
@@ -408,22 +846,41 @@ function renderDestinationList() {
   }
 }
 
+function getDestType() {
+  return document.querySelector('input[name="dest-type"]:checked')?.value || "node";
+}
+
+function setDestType(type) {
+  destTypeRadios.forEach((radio) => {
+    radio.checked = radio.value === type;
+  });
+  updateDestTypeUI(type);
+}
+
+function updateDestTypeUI(type) {
+  // Calendar destinations write to Workflowy's native calendar; there is no
+  // node to pick and the name is fixed to "Daily Note"
+  const isCalendar = type === "calendar";
+  nodeTree.classList.toggle("hidden", isCalendar);
+  destNameInput.closest(".input-group").classList.toggle("hidden", isCalendar);
+}
+
 function saveDestination() {
   const type = getDestType();
-  if (type === "node" && !selectedNodeId) {
-    showToast("Select a node first", true);
+  if (type === "node" && !selectedTreeNodeId) {
+    showToast("ノードを選択してください", true);
     return;
   }
   const name = type === "calendar" ? "Daily Note" : destNameInput.value.trim();
   if (!name) {
-    showToast("Enter a name", true);
+    showToast("表示名を入力してください", true);
     return;
   }
 
   const dest = {
     id: crypto.randomUUID(),
     type,
-    nodeId: type === "node" ? selectedNodeId : undefined,
+    nodeId: type === "node" ? selectedTreeNodeId : undefined,
     name,
   };
   settings.destinations.push(dest);
@@ -431,534 +888,132 @@ function saveDestination() {
   saveSettings();
   renderDestinationList();
   panelAddDest.classList.add("hidden");
-  showToast("Destination added");
+  showToast("保存先を追加しました");
 }
 
-// ==================== Task view ====================
+// ==================== Node tree (destination picker) ====================
 
-const TASKS_CACHE_KEY = "taskflowy_tasks_cache";
-const TASKS_CACHE_TTL_MS = 60 * 1000;
-const TASK_GROUPING_KEY = "taskflowy_task_grouping";
-
-function loadTaskGrouping() {
+async function loadNodeTree(parentId) {
+  nodeTree.innerHTML = '<div class="tree-empty"><div class="spinner"></div></div>';
   try {
-    const val = localStorage.getItem(TASK_GROUPING_KEY);
-    if (val === "due" || val === "parent" || val === "created") return val;
-  } catch {}
-  return "due";
-}
-
-function saveTaskGrouping(val) {
-  taskGrouping = val;
-  try {
-    localStorage.setItem(TASK_GROUPING_KEY, val);
-  } catch {}
-}
-
-function getTasksCache() {
-  try {
-    const raw = localStorage.getItem(TASKS_CACHE_KEY);
-    if (!raw) return null;
-    const entry = JSON.parse(raw);
-    if (!entry || !Array.isArray(entry.tasks)) return null;
-    return entry;
-  } catch {
-    return null;
+    const pid = parentId || "None";
+    const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
+    renderNodeTree(nodes);
+  } catch (e) {
+    nodeTree.innerHTML = `<p class="tree-empty">${escapeText(e.message)}</p>`;
   }
 }
 
-function setTasksCache(tasks) {
-  try {
-    localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify({ tasks, timestamp: Date.now() }));
-  } catch {}
-}
+function renderNodeTree(nodes) {
+  nodeTree.innerHTML = "";
 
-function bindTaskEvents() {
-  taskGroupTabs.querySelectorAll(".segmented-item").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      saveTaskGrouping(btn.dataset.group);
-      renderTaskGroupTabs();
-      renderTasks();
+  // Breadcrumb navigation
+  if (nodeTreePath.length > 0) {
+    const breadcrumb = document.createElement("div");
+    breadcrumb.className = "node-tree-breadcrumb";
+
+    const rootLink = document.createElement("span");
+    rootLink.className = "breadcrumb-link";
+    rootLink.textContent = "Home";
+    rootLink.addEventListener("click", () => {
+      nodeTreePath = [];
+      selectedTreeNodeId = null;
+      destNameInput.value = "";
+      loadNodeTree();
     });
-  });
-  renderTaskGroupTabs();
+    breadcrumb.appendChild(rootLink);
 
-  btnAddTask.addEventListener("click", () => {
-    taskNameInput.value = "";
-    taskDestinationId = settings.selectedDestinationId;
-    updateTaskDestinationLabel();
-    openModal(modalAddTask, () => taskNameInput.focus());
-  });
+    for (let i = 0; i < nodeTreePath.length; i++) {
+      const sep = document.createElement("span");
+      sep.className = "breadcrumb-sep";
+      sep.textContent = " / ";
+      breadcrumb.appendChild(sep);
 
-  taskDestinationSelector.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleTaskDestinationDropdown();
-  });
-  document.addEventListener("click", () => {
-    taskDestinationDropdown.classList.add("hidden");
-  });
-
-  btnSaveTask.addEventListener("click", handleAddTask);
-  taskNameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAddTask();
+      const crumb = nodeTreePath[i];
+      if (i < nodeTreePath.length - 1) {
+        const link = document.createElement("span");
+        link.className = "breadcrumb-link";
+        link.textContent = crumb.name;
+        link.addEventListener("click", () => {
+          nodeTreePath = nodeTreePath.slice(0, i + 1);
+          selectedTreeNodeId = crumb.id;
+          destNameInput.value = crumb.name;
+          loadNodeTree(crumb.id);
+        });
+        breadcrumb.appendChild(link);
+      } else {
+        const current = document.createElement("span");
+        current.className = "breadcrumb-current";
+        current.textContent = crumb.name;
+        breadcrumb.appendChild(current);
+      }
     }
-  });
 
-  document.querySelectorAll(".schedule-shortcut").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const shortcut = scheduleShortcut(btn.dataset.shortcut);
-      if (!shortcut) return;
-      scheduleDateInput.value = shortcut.date;
-      document.querySelectorAll(".schedule-shortcut").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-    });
-  });
+    nodeTree.appendChild(breadcrumb);
+  }
 
-  scheduleDateInput.addEventListener("change", () => {
-    document.querySelectorAll(".schedule-shortcut").forEach((b) => b.classList.remove("active"));
-  });
-
-  btnConfirmSchedule.addEventListener("click", handleConfirmSchedule);
-
-  btnUndo.addEventListener("click", handleUndoComplete);
-
-  btnRefreshTasks.addEventListener("click", () => loadTasks(true));
-
-  // Re-fetch when the app returns to the foreground, so edits made in
-  // Workflowy itself show up (60s cache still applies).
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) loadTasks();
-  });
-}
-
-function renderTaskGroupTabs() {
-  taskGroupTabs.querySelectorAll(".segmented-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.group === taskGrouping);
-  });
-}
-
-function toggleTaskDestinationDropdown() {
-  if (!taskDestinationDropdown.classList.contains("hidden")) {
-    taskDestinationDropdown.classList.add("hidden");
+  if (!nodes.length) {
+    const msg = document.createElement("p");
+    msg.className = "tree-empty";
+    msg.textContent = "子ノードがありません";
+    nodeTree.appendChild(msg);
     return;
   }
-  if (!settings.destinations.length) return;
 
-  taskDestinationDropdown.innerHTML = "";
-  for (const dest of settings.destinations) {
-    const isActive = dest.id === taskDestinationId;
-    const item = document.createElement("div");
-    item.className = "destination-dropdown-item" + (isActive ? " active" : "");
-    item.innerHTML = destinationNameHtml(dest);
-    item.addEventListener("click", (e) => {
+  for (const node of nodes) {
+    const text = normalizeTitle(node.name) || "(無題)";
+    const div = document.createElement("div");
+    const isCompleted = node.completedAt !== null;
+    div.className =
+      "node-tree-item" +
+      (selectedTreeNodeId === node.id ? " selected" : "") +
+      (isCompleted ? " completed" : "");
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "node-tree-item-name";
+    nameSpan.textContent = text;
+    div.appendChild(nameSpan);
+
+    const drillBtn = document.createElement("span");
+    drillBtn.className = "node-tree-drill";
+    drillBtn.textContent = "▶";
+    drillBtn.title = "子ノードを表示";
+    div.appendChild(drillBtn);
+
+    // Click name to select
+    nameSpan.addEventListener("click", (e) => {
       e.stopPropagation();
-      taskDestinationId = dest.id;
-      updateTaskDestinationLabel();
-      taskDestinationDropdown.classList.add("hidden");
-    });
-    taskDestinationDropdown.appendChild(item);
-  }
-  taskDestinationDropdown.classList.remove("hidden");
-}
-
-function updateTaskDestinationLabel() {
-  const dest = settings.destinations.find((d) => d.id === taskDestinationId) || null;
-  taskDestinationLabel.innerHTML = dest ? destinationNameHtml(dest) : "No destination";
-}
-
-// Load tasks: show cache immediately (stale-while-revalidate), skip the
-// network round trip entirely if the cache is fresh (<60s old).
-// force=true (manual refresh) bypasses the freshness check; the server
-// still returns 429 if Workflowy's 1 req/min export limit is hit.
-let tasksLoading = false;
-async function loadTasks(force = false) {
-  if (tasksLoading) return;
-  const cache = getTasksCache();
-  if (cache) {
-    tasksState = cache.tasks;
-    renderTasks();
-    const age = Date.now() - cache.timestamp;
-    if (!force && age < TASKS_CACHE_TTL_MS) return;
-  } else {
-    taskList.innerHTML = '<div class="task-loading"><div class="spinner"></div></div>';
-  }
-
-  tasksLoading = true;
-  btnRefreshTasks.classList.add("refreshing");
-  try {
-    const data = await apiRequest("/tasks");
-    tasksState = data.tasks;
-    setTasksCache(tasksState);
-    renderTasks();
-  } catch (e) {
-    if (!cache) {
-      taskList.innerHTML = `<p class="task-empty">${escapeHtml(e.message)}</p>`;
-    } else if (force) {
-      // Manual refresh failed (likely rate limited): say so instead of
-      // silently keeping the stale view.
-      const rateLimited = /API error 429/.test(e.message);
-      showToast(rateLimited ? "Rate limited. Try again in a minute." : e.message, true);
-    }
-    // Background refresh errors: keep showing cached/stale view silently
-  } finally {
-    tasksLoading = false;
-    btnRefreshTasks.classList.remove("refreshing");
-  }
-}
-
-function renderTasks() {
-  if (!tasksState.length) {
-    taskList.innerHTML = '<p class="task-empty">No tasks</p>';
-    return;
-  }
-
-  let groups;
-  if (taskGrouping === "parent") {
-    groups = groupByParent(tasksState);
-  } else if (taskGrouping === "created") {
-    groups = groupByCreated(tasksState);
-  } else {
-    groups = groupByDue(tasksState);
-  }
-
-  // The parent-node view groups rows under their own parent path, so the
-  // per-row path chip would be redundant there.
-  const showParentPath = taskGrouping !== "parent";
-
-  taskList.innerHTML = "";
-  for (const group of groups) {
-    const header = document.createElement("div");
-    header.className = "task-section-header" + (group.key === "overdue" ? " overdue" : "");
-    header.textContent = taskGrouping === "parent" && group.path && group.path.length ? group.path.join(" / ") : group.label;
-    taskList.appendChild(header);
-
-    for (const task of group.tasks) {
-      taskList.appendChild(buildTaskRow(task, { showParentPath }));
-    }
-  }
-}
-
-function buildTaskRow(task, { showParentPath }) {
-  const wrap = document.createElement("div");
-  wrap.className = "task-row-wrap";
-  wrap.dataset.taskId = task.id;
-
-  const completeAction = document.createElement("div");
-  completeAction.className = "task-row-action complete";
-  completeAction.textContent = "Complete";
-  wrap.appendChild(completeAction);
-
-  const scheduleAction = document.createElement("div");
-  scheduleAction.className = "task-row-action schedule";
-  scheduleAction.textContent = "Schedule";
-  wrap.appendChild(scheduleAction);
-
-  const row = document.createElement("div");
-  row.className = "task-row";
-
-  const body = document.createElement("div");
-  body.className = "task-row-body";
-
-  const nameEl = document.createElement("div");
-  nameEl.className = "task-row-name";
-  nameEl.textContent = task.plainName;
-  body.appendChild(nameEl);
-
-  const meta = document.createElement("div");
-  meta.className = "task-row-meta";
-
-  if (task.due) {
-    const badge = document.createElement("span");
-    const cls = classifyDueForBadge(task.due);
-    badge.className = "task-due-badge" + (cls ? ` ${cls}` : "");
-    badge.textContent = formatDueBadge(task.due);
-    meta.appendChild(badge);
-  }
-
-  if (showParentPath && task.parentPath && task.parentPath.length) {
-    const pathEl = document.createElement("span");
-    pathEl.className = "task-parent-path";
-    pathEl.textContent = task.parentPath.join(" / ");
-    meta.appendChild(pathEl);
-  }
-
-  if (meta.childNodes.length) body.appendChild(meta);
-  row.appendChild(body);
-
-  const hoverActions = document.createElement("div");
-  hoverActions.className = "task-row-hover-actions";
-  hoverActions.innerHTML = `
-    <button class="task-row-hover-btn complete" data-action="complete" title="Complete">
-      <iconify-icon icon="heroicons:check-circle" width="20" height="20"></iconify-icon>
-    </button>
-    <button class="task-row-hover-btn schedule" data-action="schedule" title="Set due date">
-      <iconify-icon icon="heroicons:calendar-days" width="20" height="20"></iconify-icon>
-    </button>
-  `;
-  hoverActions.querySelector('[data-action="complete"]').addEventListener("click", (e) => {
-    e.stopPropagation();
-    completeTaskRow(wrap, task.id);
-  });
-  hoverActions.querySelector('[data-action="schedule"]').addEventListener("click", (e) => {
-    e.stopPropagation();
-    openScheduleSheet(task.id);
-  });
-  row.appendChild(hoverActions);
-
-  wrap.appendChild(row);
-  bindTaskRowSwipe(wrap, row, task);
-  return wrap;
-}
-
-function classifyDueForBadge(due) {
-  const today = localDateString();
-  if (due.date < today) return "overdue";
-  if (due.date === today) return "today";
-  return "";
-}
-
-// Touch swipe: right = complete, left = open schedule sheet. Direction is
-// locked in on the first move past the threshold so vertical scrolling
-// isn't hijacked.
-function bindTaskRowSwipe(wrap, row, task) {
-  let startX = 0;
-  let startY = 0;
-  let dx = 0;
-  let direction = null; // "horizontal" | "vertical" | null
-  let dragging = false;
-
-  row.addEventListener(
-    "touchstart",
-    (e) => {
-      const t = e.touches[0];
-      startX = t.clientX;
-      startY = t.clientY;
-      dx = 0;
-      direction = null;
-      dragging = false;
-      row.classList.add("dragging");
-    },
-    { passive: true }
-  );
-
-  row.addEventListener(
-    "touchmove",
-    (e) => {
-      const t = e.touches[0];
-      const curDx = t.clientX - startX;
-      const curDy = t.clientY - startY;
-
-      if (!direction) {
-        direction = swipeDirection(curDx, curDy, 10);
-        if (direction === "vertical") return; // let the page scroll
-      }
-      if (direction !== "horizontal") return;
-
-      dragging = true;
-      e.preventDefault();
-      dx = curDx;
-      row.style.transform = `translateX(${dx}px)`;
-    },
-    { passive: false }
-  );
-
-  row.addEventListener("touchend", () => {
-    row.classList.remove("dragging");
-    if (dragging) {
-      const action = resolveSwipeAction(dx, 80);
-      if (action === "complete") {
-        completeTaskRow(wrap, task.id);
-        return;
-      } else if (action === "schedule") {
-        row.style.transform = "";
-        openScheduleSheet(task.id);
-        return;
-      }
-    }
-    row.style.transform = "";
-    direction = null;
-    dragging = false;
-  });
-
-  row.addEventListener("touchcancel", () => {
-    row.classList.remove("dragging");
-    row.style.transform = "";
-  });
-
-  // Tap (no drag) opens the node in Workflowy
-  row.addEventListener("click", (e) => {
-    if (e.target.closest(".task-row-hover-actions")) return;
-    if (Math.abs(dx) > 5) {
-      dx = 0;
-      return;
-    }
-    window.open(workflowyUrl(task.id), "_blank", "noopener");
-  });
-}
-
-async function completeTaskRow(wrap, taskId) {
-  const task = tasksState.find((t) => t.id === taskId);
-  if (!task) return;
-
-  wrap.querySelector(".task-row")?.classList.add("completing");
-  wrap.style.maxHeight = `${wrap.offsetHeight}px`;
-  requestAnimationFrame(() => {
-    const rowEl = wrap.querySelector(".task-row");
-    if (rowEl) rowEl.style.transform = "translateX(120%)";
-    wrap.style.opacity = "0";
-  });
-
-  try {
-    await apiRequest(`/nodes/${encodeURIComponent(taskId)}/complete`, { method: "POST" });
-  } catch (e) {
-    showToast(e.message, true);
-    wrap.style.opacity = "";
-    wrap.querySelector(".task-row")?.classList.remove("completing");
-    const rowEl = wrap.querySelector(".task-row");
-    if (rowEl) rowEl.style.transform = "";
-    return;
-  }
-
-  tasksState = tasksState.filter((t) => t.id !== taskId);
-  setTasksCache(tasksState);
-  setTimeout(() => {
-    wrap.remove();
-    if (!taskList.querySelector(".task-row-wrap")) renderTasks();
-  }, 260);
-
-  showUndoToast(task);
-}
-
-function showUndoToast(task) {
-  undoData = { task };
-  undoToastMessage.textContent = `"${task.plainName}" completed`;
-  undoToast.classList.remove("hidden");
-  if (undoTimer) clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => {
-    undoToast.classList.add("hidden");
-    undoData = null;
-  }, 5000);
-}
-
-async function handleUndoComplete() {
-  if (!undoData) return;
-  const { task } = undoData;
-  undoToast.classList.add("hidden");
-  if (undoTimer) clearTimeout(undoTimer);
-  undoData = null;
-
-  try {
-    await apiRequest(`/nodes/${encodeURIComponent(task.id)}/uncomplete`, { method: "POST" });
-    tasksState = [task, ...tasksState.filter((t) => t.id !== task.id)];
-    setTasksCache(tasksState);
-    renderTasks();
-    showToast("Task restored");
-  } catch (e) {
-    showToast(e.message, true);
-  }
-}
-
-function openScheduleSheet(taskId) {
-  scheduleTargetTaskId = taskId;
-  scheduleDateInput.value = "";
-  scheduleTimeInput.value = "";
-  document.querySelectorAll(".schedule-shortcut").forEach((b) => b.classList.remove("active"));
-  openModal(modalSchedule);
-}
-
-async function handleConfirmSchedule() {
-  const date = scheduleDateInput.value;
-  if (!date) {
-    showToast("Choose a date", true);
-    return;
-  }
-  const time = scheduleTimeInput.value || undefined;
-  const taskId = scheduleTargetTaskId;
-  if (!taskId) return;
-
-  btnConfirmSchedule.disabled = true;
-  try {
-    await apiRequest(`/nodes/${encodeURIComponent(taskId)}/schedule`, {
-      method: "POST",
-      body: JSON.stringify({ date, time }),
-    });
-    const task = tasksState.find((t) => t.id === taskId);
-    if (task) {
-      task.due = { date, time: time || null };
-      setTasksCache(tasksState);
-      renderTasks();
-    }
-    modalSchedule.classList.add("hidden");
-    showToast("Scheduled");
-  } catch (e) {
-    showToast(e.message, true);
-  } finally {
-    btnConfirmSchedule.disabled = false;
-  }
-}
-
-async function handleAddTask() {
-  const name = taskNameInput.value.trim();
-  if (!name) return;
-  const dest = settings.destinations.find((d) => d.id === taskDestinationId);
-  if (!dest) {
-    showToast("No destination selected", true);
-    return;
-  }
-
-  btnSaveTask.disabled = true;
-  try {
-    const result = await apiRequest("/send", {
-      method: "POST",
-      body: JSON.stringify({
-        targetType: dest.type,
-        parentId: dest.type === "node" ? dest.nodeId : undefined,
-        name,
-        layoutMode: "todo",
-      }),
+      selectedTreeNodeId = node.id;
+      destNameInput.value = text;
+      nodeTree.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
+      div.classList.add("selected");
     });
 
-    const newTask = {
-      id: result.item_id || `temp-${Date.now()}`,
-      name,
-      plainName: name,
-      note: null,
-      parentId: dest.type === "node" ? dest.nodeId : null,
-      parentPath: [],
-      createdAt: Math.floor(Date.now() / 1000),
-      due: null,
-    };
-    tasksState = [newTask, ...tasksState];
-    setTasksCache(tasksState);
-    renderTasks();
+    // Click drill button to navigate into children
+    drillBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedTreeNodeId = node.id;
+      destNameInput.value = text;
+      nodeTreePath.push({ id: node.id, name: text });
+      loadNodeTree(node.id);
+    });
 
-    modalAddTask.classList.add("hidden");
-    showToast("Task added");
-  } catch (e) {
-    showToast(e.message, true);
-  } finally {
-    btnSaveTask.disabled = false;
+    nodeTree.appendChild(div);
   }
 }
 
-// Modal helpers
-function openModal(modal, onOpen) {
-  modal.classList.remove("hidden");
-  if (onOpen) onOpen();
-}
+// ==================== Toast ====================
 
-// Toast
 function showToast(message, isError = false) {
   toast.textContent = message;
   toast.className = "toast" + (isError ? " error" : "");
   setTimeout(() => {
     toast.classList.add("hidden");
-  }, 2000);
+  }, 2200);
 }
 
-// Service Worker
+// ==================== Service Worker ====================
+
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -971,58 +1026,83 @@ function pushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
-function bindNotificationEvents() {
-  btnEnableNotifications.addEventListener("click", enableNotifications);
-  btnDisableNotifications.addEventListener("click", disableNotifications);
-  btnTestNotification.addEventListener("click", sendTestNotification);
-  btnSaveNotificationHour.addEventListener("click", saveNotificationHour);
-}
-
 async function refreshNotificationUI() {
   if (!pushSupported()) {
-    notificationStatus.textContent = "Push notifications are not supported in this browser.";
-    btnEnableNotifications.classList.add("hidden");
-    btnDisableNotifications.classList.add("hidden");
-    btnTestNotification.classList.add("hidden");
+    notificationStatus.textContent = "このブラウザは Push 通知に対応していません。";
+    notificationStatus.classList.remove("hidden");
+    btnToggleNotifications.disabled = true;
+    renderReminderHours();
     return;
   }
 
   if (Notification.permission === "denied") {
-    notificationStatus.textContent = "Notifications are blocked. Enable them in your browser/OS settings.";
-    btnEnableNotifications.classList.add("hidden");
-    btnDisableNotifications.classList.add("hidden");
-    btnTestNotification.classList.add("hidden");
+    notificationStatus.textContent = "通知がブロックされています。ブラウザ/OS の設定から許可してください。";
+    notificationStatus.classList.remove("hidden");
+    btnToggleNotifications.disabled = true;
   } else {
+    notificationStatus.classList.add("hidden");
+    btnToggleNotifications.disabled = false;
     try {
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
-      const subscribed = !!existing;
-      notificationStatus.textContent = subscribed
-        ? "Notifications are enabled on this device."
-        : "Notifications are not enabled on this device.";
-      btnEnableNotifications.classList.toggle("hidden", subscribed);
-      btnDisableNotifications.classList.toggle("hidden", !subscribed);
-      btnTestNotification.classList.toggle("hidden", !subscribed);
+      pushSubscribed = !!existing;
     } catch {
-      notificationStatus.textContent = "Could not determine notification status.";
+      pushSubscribed = false;
     }
+    btnToggleNotifications.textContent = pushSubscribed ? "無効にする" : "有効にする";
+    btnToggleNotifications.classList.toggle("on", pushSubscribed);
+    btnTestNotification.classList.toggle("hidden", !pushSubscribed);
   }
 
   try {
-    const settings = await apiRequest("/notification-settings");
-    notificationHourInput.value = settings.morningHour;
+    const data = await apiRequest("/notification-settings");
+    reminderHour = data.morningHour;
   } catch {
-    // Leave the input blank if settings can't be fetched (e.g. not authenticated yet)
+    // Leave unset if settings can't be fetched (e.g. not authenticated yet)
+  }
+  renderReminderHours();
+}
+
+function renderReminderHours() {
+  reminderHoursEl.innerHTML = "";
+  const hours = REMINDER_HOURS.slice();
+  if (reminderHour != null && !hours.includes(reminderHour)) {
+    hours.push(reminderHour);
+    hours.sort((a, b) => a - b);
+  }
+  for (const hour of hours) {
+    const chip = document.createElement("button");
+    chip.className = "chip mono" + (hour === reminderHour ? " active" : "");
+    chip.textContent = `${hour}:00`;
+    chip.addEventListener("click", () => saveReminderHour(hour));
+    reminderHoursEl.appendChild(chip);
+  }
+}
+
+async function saveReminderHour(hour) {
+  const previous = reminderHour;
+  reminderHour = hour;
+  renderReminderHours();
+  try {
+    await apiRequest("/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify({ morningHour: hour }),
+    });
+    showToast("リマインド時刻を保存しました");
+  } catch (e) {
+    reminderHour = previous;
+    renderReminderHours();
+    showToast(e.message || "リマインド時刻の保存に失敗しました", true);
   }
 }
 
 async function enableNotifications() {
   if (!pushSupported()) return;
-  btnEnableNotifications.disabled = true;
+  btnToggleNotifications.disabled = true;
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
-      showToast("Notification permission was not granted", true);
+      showToast("通知が許可されませんでした", true);
       return;
     }
 
@@ -1038,17 +1118,17 @@ async function enableNotifications() {
       body: JSON.stringify(subscription.toJSON()),
     });
 
-    showToast("Notifications enabled");
+    showToast("通知を有効にしました");
   } catch (e) {
-    showToast(e.message || "Failed to enable notifications", true);
+    showToast(e.message || "通知を有効にできませんでした", true);
   } finally {
-    btnEnableNotifications.disabled = false;
+    btnToggleNotifications.disabled = false;
     refreshNotificationUI();
   }
 }
 
 async function disableNotifications() {
-  btnDisableNotifications.disabled = true;
+  btnToggleNotifications.disabled = true;
   try {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
@@ -1059,11 +1139,11 @@ async function disableNotifications() {
       });
       await subscription.unsubscribe();
     }
-    showToast("Notifications disabled");
+    showToast("通知を無効にしました");
   } catch (e) {
-    showToast(e.message || "Failed to disable notifications", true);
+    showToast(e.message || "通知を無効にできませんでした", true);
   } finally {
-    btnDisableNotifications.disabled = false;
+    btnToggleNotifications.disabled = false;
     refreshNotificationUI();
   }
 }
@@ -1072,31 +1152,11 @@ async function sendTestNotification() {
   btnTestNotification.disabled = true;
   try {
     await apiRequest("/push/test", { method: "POST" });
-    showToast("Test notification sent");
+    showToast("テスト通知を送信しました");
   } catch (e) {
-    showToast(e.message || "Failed to send test notification", true);
+    showToast(e.message || "テスト通知の送信に失敗しました", true);
   } finally {
     btnTestNotification.disabled = false;
-  }
-}
-
-async function saveNotificationHour() {
-  const hour = parseInt(notificationHourInput.value, 10);
-  if (isNaN(hour) || hour < 0 || hour > 23) {
-    showToast("Enter an hour between 0 and 23", true);
-    return;
-  }
-  btnSaveNotificationHour.disabled = true;
-  try {
-    await apiRequest("/notification-settings", {
-      method: "PUT",
-      body: JSON.stringify({ morningHour: hour }),
-    });
-    showToast("Reminder time saved");
-  } catch (e) {
-    showToast(e.message || "Failed to save reminder time", true);
-  } finally {
-    btnSaveNotificationHour.disabled = false;
   }
 }
 

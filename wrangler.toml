@@ -2,11 +2,13 @@ name = "taskflowy"
 main = "src/index.tsx"
 compatibility_date = "2024-01-17"
 
-# Access (Zero Trust) fronts the custom domain; keep the unprotected
-# workers.dev route disabled so it is the only way in.
+# Access (Zero Trust) fronts task.chroju.dev; keep the unprotected
+# workers.dev route disabled so it is the only way in. A zone route is
+# used instead of a Workers custom domain because Access must run in the
+# zone request pipeline ahead of the Worker.
 workers_dev = false
 routes = [
-  { pattern = "task.chroju.dev", custom_domain = true }
+  { pattern = "task.chroju.dev/*", zone_name = "chroju.dev" }
 ]
 
 [assets]

@@ -140,4 +140,23 @@ describe("extractTasks", () => {
   it("returns an empty array when there are no matching nodes", () => {
     expect(extractTasks([])).toEqual([]);
   });
+
+  it("marks incomplete tasks with completed: false", () => {
+    const nodes = [makeNode({ id: "a", data: { layoutMode: "todo" } })];
+    expect(extractTasks(nodes)[0].completed).toBe(false);
+  });
+
+  it("includes completed todo nodes when includeCompleted is set", () => {
+    const nodes = [
+      makeNode({ id: "a", data: { layoutMode: "todo" }, completedAt: 123 }),
+      makeNode({ id: "b", data: { layoutMode: "todo" }, completed: true, completedAt: null }),
+      makeNode({ id: "c", data: { layoutMode: "todo" } }),
+      makeNode({ id: "d", data: { layoutMode: "bullets" }, completedAt: 123 }),
+    ];
+    const tasks = extractTasks(nodes, { includeCompleted: true });
+    expect(tasks.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
+    expect(tasks.find((t) => t.id === "a")?.completed).toBe(true);
+    expect(tasks.find((t) => t.id === "b")?.completed).toBe(true);
+    expect(tasks.find((t) => t.id === "c")?.completed).toBe(false);
+  });
 });

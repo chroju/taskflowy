@@ -156,8 +156,19 @@ api.get("/tasks", async (c) => {
     return c.json({ error: message }, 500);
   }
 
-  const tasks = extractTasks(nodes);
+  // Completed todos are included so the client can show per-node progress
+  // (done/total) and the completed group in the single-node view.
+  const tasks = extractTasks(nodes, { includeCompleted: true });
   return c.json({ tasks });
+});
+
+// Delete a task node (left-swipe delete in the UI).
+api.delete("/nodes/:id", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const client = new WorkflowyClient(apiKey);
+  await client.deleteNode(nodeId);
+  return c.json({ ok: true });
 });
 
 // Schedule a task: sets/replaces the <time> markup embedded in its name.

@@ -48,6 +48,7 @@ export interface Task {
   parentPath: string[]; // root-first, nearest parent last
   createdAt: number;
   due: { date: string; time: string | null } | null;
+  completed: boolean;
 }
 
 export interface WorkflowyNodesResponse {

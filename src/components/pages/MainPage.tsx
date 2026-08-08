@@ -234,7 +234,7 @@ export const MainPage: FC = () => (
             <div class="card-title">通知</div>
             <button id="btn-toggle-notifications" class="pill">有効にする</button>
           </div>
-          <p class="card-desc">時刻つきのタスクはその時刻に、日付だけのタスクは下のリマインド時刻にまとめて通知します。</p>
+          <p class="card-desc">時刻つきのタスクはその時刻に通知します。日付だけのタスクと期限切れのタスクは、下のリマインド時刻にまとめて通知します。</p>
           <p id="notification-status" class="card-note hidden"></p>
           <div id="reminder-hours" class="chip-row"></div>
           <button id="btn-test-notification" class="link-button hidden">テスト通知を送る</button>

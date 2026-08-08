@@ -1,7 +1,8 @@
 import { WorkflowyClient } from "./workflowy-v1";
 import { decrypt } from "./crypto";
 import { extractTasks } from "./tasks";
-import { selectDueNotifications, type NotificationPlan } from "./notify";
+import { selectDueNotifications, overdueKey, type NotificationPlan } from "./notify";
+import { jstDateString } from "./jst";
 import { sendPush, type NotificationPayload } from "./push";
 import {
   getStoredApiKey,
@@ -28,15 +29,20 @@ function timedPayload(task: Task): NotificationPayload {
   };
 }
 
-function dailyPayload(tasks: Task[]): NotificationPayload {
-  const preview = tasks.slice(0, DAILY_BUNDLE_PREVIEW_LIMIT).map((t) => t.plainName);
-  const remaining = tasks.length - preview.length;
+function dailyPayload(tasks: Task[], overdueTasks: Task[]): NotificationPayload {
+  const title =
+    tasks.length > 0 && overdueTasks.length > 0
+      ? `Today's tasks (${tasks.length}) + overdue (${overdueTasks.length})`
+      : overdueTasks.length > 0
+        ? `Overdue tasks (${overdueTasks.length})`
+        : `Today's tasks (${tasks.length})`;
+
+  const lines = [...tasks.map((t) => t.plainName), ...overdueTasks.map((t) => `⚠ ${t.plainName}`)];
+  const preview = lines.slice(0, DAILY_BUNDLE_PREVIEW_LIMIT);
+  const remaining = lines.length - preview.length;
   const body = remaining > 0 ? `${preview.join("\n")}\n…and ${remaining} more` : preview.join("\n");
 
-  return {
-    title: `Today's tasks (${tasks.length})`,
-    body,
-  };
+  return { title, body };
 }
 
 function planKeys(plan: NotificationPlan): string[] {
@@ -44,14 +50,14 @@ function planKeys(plan: NotificationPlan): string[] {
 }
 
 function planPayload(plan: NotificationPlan): NotificationPayload {
-  return plan.type === "timed" ? timedPayload(plan.tasks[0]) : dailyPayload(plan.tasks);
+  return plan.type === "timed" ? timedPayload(plan.tasks[0]) : dailyPayload(plan.tasks, plan.overdueTasks);
 }
 
 // Collects every notification key a task could possibly produce right now,
 // so we can ask KV in one batch which of them are already marked notified
 // (selectDueNotifications needs the full notified-set up front, it doesn't
 // do its own KV lookups).
-function candidateKeysFor(tasks: Task[]): string[] {
+function candidateKeysFor(tasks: Task[], today: string): string[] {
   const keys: string[] = [];
   for (const task of tasks) {
     if (!task.due) continue;
@@ -59,6 +65,9 @@ function candidateKeysFor(tasks: Task[]): string[] {
       keys.push(`${task.id}:${task.due.date}:${task.due.time}`);
     } else {
       keys.push(`daily:${task.due.date}:${task.id}`);
+    }
+    if (task.due.date < today) {
+      keys.push(overdueKey(today, task.id));
     }
   }
   return keys;
@@ -80,7 +89,7 @@ export async function runNotificationSweep(
   const tasks = extractTasks(nodes);
 
   const settings = await getNotificationSettings(env.KV);
-  const notifiedKeys = await getNotifiedKeys(env.KV, candidateKeysFor(tasks));
+  const notifiedKeys = await getNotifiedKeys(env.KV, candidateKeysFor(tasks, jstDateString(now)));
   const { notifications, keysToMarkNotified } = selectDueNotifications(
     tasks,
     now,

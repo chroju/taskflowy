@@ -101,11 +101,13 @@ npm run test:ui    # vitest UI起動
   （`today`/`tomorrow`/`next_week`/`YYYY-MM-DD`）を受け、Day NodeはWF側でオンデマンド作成。
   クライアントは常にローカル日付を明示して送る（サーバーTZに依存しない）
 - **通知**: 自前Web Push（VAPID）+ Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）。
-  時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）、日付のみのタスクは
-  朝`morningHour`（KV設定、デフォルト9）JSTにその日が期日のタスクをまとめて1通知。
-  過去24時間より前に期日を迎えた分は初回導入時の大量通知を避けるため送信せず
-  「通知済み」として記録するのみ。判定ロジックは`selectDueNotifications`（純粋関数、
-  `src/test/notify.test.ts`にテストあり）
+  時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）。朝`morningHour`
+  （KV設定、デフォルト9）JSTのまとめ通知は「その日が期日のタスク」+「期日を過ぎても
+  未完了のタスク（期限切れセクション。キーが`overdue:<今日>:<taskId>`のため、完了/期限変更
+  されるまで毎朝繰り返す）」を1通知に束ねる。期限切れのみでも発火する。時刻付きタスクの
+  個別通知だけは、期日から24時間より古い分を初回導入時の通知バーストを避けるため送信せず
+  「通知済み」として記録する（まとめ通知側には出る）。判定ロジックは
+  `selectDueNotifications`（純粋関数、`src/test/notify.test.ts`にテストあり）
 
 ## Environment Variables (wrangler.toml)
 

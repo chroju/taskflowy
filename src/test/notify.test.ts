@@ -71,17 +71,19 @@ describe("selectDueNotifications - timed tasks", () => {
     }
   });
 
-  it("suppresses timed tasks overdue by more than 24 hours (initial overdue backlog)", () => {
+  it("suppresses the per-task push for timed tasks overdue by more than 24 hours, leaving them to the digest", () => {
     const now = new Date("2026-07-28T06:00:00Z"); // 15:00 JST
     // Due more than 24h ago
     const task = makeTask({ id: "old", due: { date: "2026-07-26", time: "10:00" } });
     const result = selectDueNotifications([task], now, settings, new Set());
 
-    expect(result.notifications).toHaveLength(0);
-    // But it should be recorded as notified so it doesn't get silently
-    // reconsidered forever, and so it won't suddenly notify once it
-    // crosses back within some future window.
+    // No individual timed push, and its timed key is recorded so it never
+    // suddenly fires one. The task itself still surfaces via the overdue
+    // section of the morning digest.
+    expect(result.notifications.filter((n) => n.type === "timed")).toHaveLength(0);
     expect(result.keysToMarkNotified).toContain("old:2026-07-26:10:00");
+    expect(result.notifications).toHaveLength(1);
+    expect(result.notifications[0]).toMatchObject({ type: "daily", overdueTasks: [task] });
   });
 
   it("notifies timed tasks within the 24h overdue window", () => {
@@ -89,7 +91,7 @@ describe("selectDueNotifications - timed tasks", () => {
     // 23 hours overdue
     const task = makeTask({ id: "t1", due: { date: "2026-07-27", time: "16:00" } });
     const result = selectDueNotifications([task], now, settings, new Set());
-    expect(result.notifications).toHaveLength(1);
+    expect(result.notifications.filter((n) => n.type === "timed")).toHaveLength(1);
   });
 
   it("ignores tasks without a due date", () => {
@@ -176,36 +178,94 @@ describe("selectDueNotifications - date-only tasks", () => {
     expect(result.notifications[0].tasks.map((t) => t.id)).toEqual(["t2"]);
   });
 
-  it("suppresses date-only tasks overdue (due date) by more than 24h worth of days as initial backlog", () => {
-    // "Today" in JST is 2026-07-28. A date-only task due 3 days ago is
-    // long-overdue backlog from before the app was installed.
-    const now = new Date("2026-07-28T01:00:00Z"); // 10:00 JST, past morning hour
-    const task = makeTask({ id: "old", due: { date: "2026-07-25", time: null } });
-    const result = selectDueNotifications([task], now, settings, new Set());
-
-    expect(result.notifications).toHaveLength(0);
-    expect(result.keysToMarkNotified).toContain("daily:2026-07-25:old");
-  });
-
-  it("does not suppress a date-only task due yesterday (within 24h-ish backlog grace)", () => {
-    // date-only tasks: only same-day (due.date === today) are eligible at all;
-    // anything with due.date before today falls into the "already missed" bucket.
-    // This test documents that a task due exactly "yesterday" is treated as
-    // backlog too (since date-only tasks only fire on their exact due date).
-    const now = new Date("2026-07-28T01:00:00Z"); // 10:00 JST
-    const task = makeTask({ id: "y", due: { date: "2026-07-27", time: null } });
-    const result = selectDueNotifications([task], now, settings, new Set());
-
-    expect(result.notifications).toHaveLength(0);
-    expect(result.keysToMarkNotified).toContain("daily:2026-07-27:y");
-  });
-
   it("ignores date-only tasks whose due date is in the future", () => {
     const now = new Date("2026-07-28T05:00:00Z"); // 14:00 JST
     const task = makeTask({ id: "t1", due: { date: "2026-07-29", time: null } });
     const result = selectDueNotifications([task], now, settings, new Set());
     expect(result.notifications).toHaveLength(0);
     expect(result.keysToMarkNotified).toHaveLength(0);
+  });
+});
+
+describe("selectDueNotifications - overdue digest", () => {
+  it("includes an overdue date-only task in the morning digest, keyed by today's date", () => {
+    const now = new Date("2026-07-28T01:00:00Z"); // 10:00 JST, past morning hour
+    const task = makeTask({ id: "old", due: { date: "2026-07-25", time: null } });
+    const result = selectDueNotifications([task], now, settings, new Set());
+
+    expect(result.notifications).toHaveLength(1);
+    const plan = result.notifications[0];
+    expect(plan).toMatchObject({ type: "daily", tasks: [], overdueTasks: [task] });
+    if (plan.type === "daily") {
+      expect(plan.keys).toEqual(["overdue:2026-07-28:old"]);
+    }
+    expect(result.keysToMarkNotified).toHaveLength(0);
+  });
+
+  it("includes an overdue timed task in the digest", () => {
+    const now = new Date("2026-07-28T01:00:00Z"); // 10:00 JST
+    const task = makeTask({ id: "t1", due: { date: "2026-07-25", time: "10:00" } });
+    const result = selectDueNotifications(
+      [task],
+      now,
+      settings,
+      new Set(["t1:2026-07-25:10:00"]) // its one-shot timed push already fired
+    );
+
+    expect(result.notifications).toHaveLength(1);
+    expect(result.notifications[0]).toMatchObject({ type: "daily", overdueTasks: [task] });
+  });
+
+  it("does not fire the overdue digest before the morning hour", () => {
+    const now = new Date("2026-07-27T23:00:00Z"); // 08:00 JST
+    const task = makeTask({ id: "old", due: { date: "2026-07-25", time: null } });
+    const result = selectDueNotifications([task], now, settings, new Set());
+    expect(result.notifications).toHaveLength(0);
+    // Not marked either: it waits for the morning digest instead.
+    expect(result.keysToMarkNotified).toHaveLength(0);
+  });
+
+  it("does not repeat the overdue digest within the same day", () => {
+    const now = new Date("2026-07-28T05:00:00Z"); // 14:00 JST, digest already sent this morning
+    const task = makeTask({ id: "old", due: { date: "2026-07-25", time: null } });
+    const result = selectDueNotifications(
+      [task],
+      now,
+      settings,
+      new Set(["overdue:2026-07-28:old"])
+    );
+    expect(result.notifications).toHaveLength(0);
+  });
+
+  it("repeats each morning until the task is completed or rescheduled", () => {
+    const now = new Date("2026-07-28T01:00:00Z"); // 10:00 JST on the 28th
+    const task = makeTask({ id: "old", due: { date: "2026-07-25", time: null } });
+    const result = selectDueNotifications(
+      [task],
+      now,
+      settings,
+      new Set(["overdue:2026-07-27:old"]) // yesterday's digest already covered it
+    );
+
+    expect(result.notifications).toHaveLength(1);
+    const plan = result.notifications[0];
+    if (plan.type === "daily") {
+      expect(plan.keys).toEqual(["overdue:2026-07-28:old"]);
+    }
+  });
+
+  it("bundles today's tasks and overdue tasks into a single digest", () => {
+    const now = new Date("2026-07-28T00:30:00Z"); // 09:30 JST
+    const dueToday = makeTask({ id: "t1", due: { date: "2026-07-28", time: null } });
+    const overdue = makeTask({ id: "old", due: { date: "2026-07-26", time: null } });
+    const result = selectDueNotifications([dueToday, overdue], now, settings, new Set());
+
+    expect(result.notifications).toHaveLength(1);
+    const plan = result.notifications[0];
+    expect(plan).toMatchObject({ type: "daily", tasks: [dueToday], overdueTasks: [overdue] });
+    if (plan.type === "daily") {
+      expect(plan.keys.sort()).toEqual(["daily:2026-07-28:t1", "overdue:2026-07-28:old"]);
+    }
   });
 });
 

@@ -1,6 +1,8 @@
 import { stripHtml } from "./utils.js";
 import {
   localDateString,
+  addDays,
+  nextMonday,
   normalizeTitle,
   formatDueShort,
   formatDueDetail,
@@ -18,19 +20,55 @@ import {
   clampDx,
   dueShortcut,
 } from "./tasks.js";
+import {
+  migratePlaces,
+  visiblePlaces,
+  ensureVisibleView,
+  stepView,
+  resolveBarStep,
+  dailyDateLabel,
+  dailyCounts,
+  itemTimeLabel,
+  composeDestForView,
+  destLabel,
+  destSendTarget,
+  splitNoteDraft,
+  toggleInView,
+  movePlace,
+  reorderPlaces,
+} from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
 // ==================== State ====================
 
 let settings = loadSettings();
+// 場所（ビュー兼書き込み先）モデルへの移行。旧destinations設定から変換する。
+{
+  const migrated = migratePlaces(settings);
+  settings.places = migrated.places;
+  if (!settings.lastDest) settings.lastDest = migrated.lastDest;
+}
 let isAuthenticated = false;
-let tab = "today"; // 'today' | 'due' | 'nodes'
+let view = "tasks"; // 'tasks' | 'daily' | <place id>; restored in init()
+let tab = "today"; // Tasks ビュー内: 'today' | 'due' | 'nodes'
 let selectedNodeKey = null; // Nodes drilldown; cleared on tab switch
 let tasksState = []; // includes completed todos (for node progress)
 let lastSyncMs = null;
-let sheetTask = null; // task shown in the detail sheet
+let sheetTask = null; // task/item shown in the detail sheet
+let sheetOrigin = "tasks"; // どのビューの行か: 'tasks' | 'daily' | <place id>
+let sheetIsMemo = false; // メモ用の読み物レイアウトで表示中か
 let addDue = "today"; // selected chip in the add sheet
-let pendingDelete = null; // { task, wrap, row } awaiting delete confirmation
+let pendingDelete = null; // { run } awaiting delete confirmation
+
+// Daily ビュー
+let dailyGroups = [];
+let dailyHasMore = false;
+let dailyLoading = false;
+let dailyFetchedAt = null;
+
+// 登録ノードビュー: placeId -> { items, timestamp }
+let nodeViews = {};
+const nodeViewLoading = new Set();
 
 const REMINDER_HOURS = [7, 8, 9, 10, 21];
 const TAB_TITLES = { today: "Today", due: "Deadlines", nodes: "Nodes" };
@@ -49,15 +87,20 @@ const btnSettings = $("btn-settings");
 const tabbar = $("tabbar");
 const taskList = $("task-list");
 const btnAddTask = $("btn-add-task");
+const viewbar = $("viewbar");
+const viewbarTrack = $("viewbar-track");
 
 const sheetTaskEl = $("sheet-task");
+const sheetItemMeta = $("sheet-item-meta");
+const sheetTaskProps = $("sheet-task-props");
+const sheetItemNote = $("sheet-item-note");
+const btnSheetDelete = $("btn-sheet-delete");
 const sheetTaskTitle = $("sheet-task-title");
 const sheetTaskDue = $("sheet-task-due");
 const sheetTaskNode = $("sheet-task-node");
 const sheetTaskNote = $("sheet-task-note");
 const sheetTaskLink = $("sheet-task-link");
 const btnSnoozeTomorrow = $("btn-snooze-tomorrow");
-const btnSnoozeWeek = $("btn-snooze-week");
 const btnSheetComplete = $("btn-sheet-complete");
 const sheetDueEditor = $("sheet-due-editor");
 const sheetDateInput = $("sheet-date-input");
@@ -69,10 +112,29 @@ const btnSheetSaveNote = $("btn-sheet-save-note");
 const btnSheetCancelNote = $("btn-sheet-cancel-note");
 
 const sheetAddEl = $("sheet-add");
+const composeMain = $("compose-main");
+const composeModebar = $("compose-modebar");
+const composeDestRow = $("compose-dest-row");
+const btnComposeDest = $("btn-compose-dest");
+const composeDestIcon = $("compose-dest-icon");
+const composeDestName = $("compose-dest-name");
+const composeTaskBody = $("compose-task-body");
+const composeNoteBody = $("compose-note-body");
+const noteInput = $("note-input");
+const btnComposeDestSmall = $("btn-compose-dest-small");
+const composeDestSmallIcon = $("compose-dest-small-icon");
+const composeDestSmallName = $("compose-dest-small-name");
+const btnSaveNote = $("btn-save-note");
 const taskNameInput = $("task-name-input");
 const taskDateInput = $("task-date-input");
 const taskTimeInput = $("task-time-input");
 const btnSaveTask = $("btn-save-task");
+const composePicker = $("compose-picker");
+const btnPickerDone = $("btn-picker-done");
+const pickerDailyChips = $("picker-daily-chips");
+const pickerDateInput = $("picker-date-input");
+const pickerPlaces = $("picker-places");
+const pickerNodeTree = $("picker-node-tree");
 
 const sheetDeleteEl = $("sheet-delete");
 const sheetDeleteTitle = $("sheet-delete-title");
@@ -93,17 +155,16 @@ const reminderHoursEl = $("reminder-hours");
 const btnTestNotification = $("btn-test-notification");
 const syncLabel = $("sync-label");
 const btnSyncNow = $("btn-sync-now");
-const destinationList = $("destination-list");
+const placeList = $("place-list");
+const placeCount = $("place-count");
 const btnAddDestination = $("btn-add-destination");
 const panelAddDest = $("panel-add-destination");
 const nodeTree = $("node-tree");
 const destNameInput = $("dest-name-input");
-const destTypeRadios = document.querySelectorAll('input[name="dest-type"]');
 const btnSaveDestination = $("btn-save-destination");
 const btnCancelDestination = $("btn-cancel-destination");
 
 let selectedTreeNodeId = null;
-let nodeTreePath = []; // [{ id, name }] breadcrumb trail
 let pushSubscribed = false;
 let reminderHour = null;
 
@@ -113,6 +174,8 @@ async function init() {
   const today = formatHeaderDate();
   headerDate.textContent = today;
   settingsDate.textContent = today;
+  view = ensureVisibleView(settings.places, settings.lastView || "tasks") || "tasks";
+  nodeViews = loadNodeViewsCache();
   bindEvents();
   bindSettingsEvents();
   setupMobileViewport();
@@ -122,7 +185,14 @@ async function init() {
     openSettings();
   }
   render();
-  loadTasks();
+  loadCurrentView();
+}
+
+// Fetches the data behind the active view (stale-while-revalidate each).
+function loadCurrentView(force = false) {
+  if (view === "tasks") loadTasks(force);
+  else if (view === "daily") loadDaily(force);
+  else loadNodeView(view, force);
 }
 
 // Handle mobile keyboard viewport
@@ -259,7 +329,29 @@ function selectedNode() {
   return summarizeNodes(tasksState).find((n) => n.key === selectedNodeKey) || null;
 }
 
+function currentPlace() {
+  return settings.places.find((p) => p.id === view) || null;
+}
+
+function placeLabelForOrigin(origin) {
+  if (origin === "daily") return "Daily";
+  const place = settings.places.find((p) => p.id === origin);
+  return place ? place.name : "";
+}
+
 function render() {
+  renderViewBar();
+  if (view === "tasks") {
+    renderTasksView();
+  } else if (view === "daily") {
+    renderDailyView();
+  } else {
+    renderNodeView();
+  }
+}
+
+function renderTasksView() {
+  tabbar.classList.remove("hidden");
   const node = tab === "nodes" ? selectedNode() : null;
   btnBack.classList.toggle("hidden", !node);
   screenTitle.textContent = node ? node.label : TAB_TITLES[tab];
@@ -269,6 +361,292 @@ function render() {
   });
 
   renderList(node);
+}
+
+// ==================== View bar ====================
+
+let barSuppressClick = false;
+
+function renderViewBar() {
+  viewbarTrack.innerHTML = "";
+  for (const place of visiblePlaces(settings.places)) {
+    const pill = document.createElement("button");
+    pill.className = "view-pill" + (place.id === view ? " active" : "");
+    pill.dataset.view = place.id;
+    pill.setAttribute("role", "tab");
+    pill.setAttribute("aria-selected", place.id === view ? "true" : "false");
+    pill.innerHTML = '<span class="view-dot"></span><span class="view-pill-name"></span>';
+    pill.querySelector(".view-pill-name").textContent = place.name;
+    pill.addEventListener("click", () => {
+      if (barSuppressClick) return;
+      switchView(place.id);
+    });
+    viewbarTrack.appendChild(pill);
+  }
+}
+
+function switchView(next) {
+  const target = ensureVisibleView(settings.places, next);
+  if (!target || target === view) return;
+  view = target;
+  settings.lastView = target;
+  saveSettings();
+  selectedNodeKey = null;
+  // クロスフェードで切り替える（アニメーションを最初から再生し直す）
+  taskList.classList.remove("view-fade");
+  void taskList.offsetWidth;
+  taskList.classList.add("view-fade");
+  render();
+  loadCurrentView();
+  scrollActivePillIntoView();
+}
+
+function scrollActivePillIntoView() {
+  const pill = viewbarTrack.querySelector(".view-pill.active");
+  if (pill && pill.scrollIntoView) {
+    pill.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }
+}
+
+// バー上の水平ドラッグ ±44px で隣のビューへ 1 つ移動（1 ドラッグ = 1 移動）
+function bindViewBarSwipe() {
+  let pointerId = null;
+  let startX = 0;
+  let consumed = false;
+
+  viewbar.addEventListener("pointerdown", (e) => {
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    consumed = false;
+  });
+
+  viewbar.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pointerId || consumed) return;
+    const step = resolveBarStep(e.clientX - startX);
+    if (step !== 0) {
+      consumed = true;
+      barSuppressClick = true;
+      try {
+        viewbar.setPointerCapture(e.pointerId);
+      } catch {}
+      switchView(stepView(settings.places, view, step));
+    }
+  });
+
+  const finish = (e) => {
+    if (e.pointerId !== pointerId) return;
+    pointerId = null;
+    setTimeout(() => {
+      barSuppressClick = false;
+    }, 0);
+  };
+  viewbar.addEventListener("pointerup", finish);
+  viewbar.addEventListener("pointercancel", finish);
+}
+
+// ==================== Daily view ====================
+
+const DAILY_CACHE_KEY = "taskflowy_daily_cache";
+const DAILY_CACHE_TTL_MS = 60 * 1000;
+
+function getDailyCache() {
+  try {
+    const raw = localStorage.getItem(DAILY_CACHE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || !Array.isArray(entry.groups)) return null;
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function saveDailyCache() {
+  try {
+    localStorage.setItem(
+      DAILY_CACHE_KEY,
+      JSON.stringify({ groups: dailyGroups, hasMore: dailyHasMore, timestamp: dailyFetchedAt || Date.now() })
+    );
+  } catch {}
+}
+
+async function loadDaily(force = false) {
+  if (dailyLoading || !isAuthenticated) return;
+  const cache = getDailyCache();
+  if (cache) {
+    dailyGroups = cache.groups;
+    dailyHasMore = !!cache.hasMore;
+    dailyFetchedAt = cache.timestamp;
+    if (view === "daily") render();
+    if (!force && Date.now() - cache.timestamp < DAILY_CACHE_TTL_MS) return;
+  }
+
+  dailyLoading = true;
+  if (view === "daily" && !cache) render(); // spinner
+  try {
+    const groups = await apiRequest(`/daily?local_date=${localDateString()}`);
+    dailyGroups = groups;
+    dailyHasMore = groups.length > 0 && !!groups[groups.length - 1].hasMore;
+    dailyFetchedAt = Date.now();
+    saveDailyCache();
+  } catch (e) {
+    if (!cache && view === "daily") {
+      taskList.innerHTML = `<p class="list-empty">${escapeText(e.message)}</p>`;
+      dailyLoading = false;
+      return;
+    }
+    if (force) showToast(e.message, true);
+  } finally {
+    dailyLoading = false;
+  }
+  if (view === "daily") render();
+}
+
+async function loadDailyMore() {
+  if (dailyLoading || !dailyHasMore || dailyGroups.length === 0) return;
+  dailyLoading = true;
+  render();
+  try {
+    const last = dailyGroups[dailyGroups.length - 1];
+    const groups = await apiRequest(`/daily?before_date=${last.date}`);
+    dailyGroups = dailyGroups.map((g) => ({ ...g, hasMore: false })).concat(groups);
+    dailyHasMore = groups.length > 0 && !!groups[groups.length - 1].hasMore;
+    saveDailyCache();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    dailyLoading = false;
+    if (view === "daily") render();
+  }
+}
+
+function renderDailyView() {
+  tabbar.classList.add("hidden");
+  btnBack.classList.add("hidden");
+  screenTitle.textContent = "Daily";
+
+  if (!isAuthenticated) {
+    screenCount.textContent = "";
+    taskList.innerHTML = '<p class="list-empty">API キーを設定するとデイリーノートが表示されます。</p>';
+    return;
+  }
+
+  const { items, days } = dailyCounts(dailyGroups);
+  screenCount.textContent = `${items} 件 / ${days} 日`;
+  taskList.innerHTML = "";
+
+  if (!dailyGroups.length) {
+    taskList.innerHTML = dailyLoading
+      ? '<div class="list-loading"><div class="spinner"></div></div>'
+      : '<p class="list-empty">デイリーノートはありません</p>';
+    return;
+  }
+
+  const today = localDateString();
+  for (const group of dailyGroups) {
+    const header = document.createElement("div");
+    header.className = "group-header date" + (group.date === today ? " today" : "");
+    header.innerHTML = '<span class="group-label"></span><span class="group-count"></span>';
+    header.querySelector(".group-label").textContent = dailyDateLabel(group.date);
+    header.querySelector(".group-count").textContent = String(group.items.length);
+    taskList.appendChild(header);
+
+    for (const item of group.items) {
+      taskList.appendChild(buildItemRow(item, { showTime: true, origin: "daily" }));
+    }
+  }
+
+  if (dailyHasMore || dailyLoading) {
+    const more = document.createElement("button");
+    more.className = "daily-more";
+    more.textContent = dailyLoading ? "読み込み中…" : "過去のデイリーノートを読み込む";
+    more.disabled = dailyLoading;
+    more.addEventListener("click", loadDailyMore);
+    taskList.appendChild(more);
+  }
+}
+
+// ==================== Registered-node views ====================
+
+const NODEVIEW_CACHE_KEY = "taskflowy_nodeview_cache";
+const NODEVIEW_CACHE_TTL_MS = 60 * 1000;
+
+function loadNodeViewsCache() {
+  try {
+    const raw = localStorage.getItem(NODEVIEW_CACHE_KEY);
+    const map = raw ? JSON.parse(raw) : null;
+    return map && typeof map === "object" ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveNodeViewsCache() {
+  try {
+    // 削除された場所のキャッシュは持ち越さない
+    const trimmed = {};
+    for (const place of settings.places) {
+      if (nodeViews[place.id]) trimmed[place.id] = nodeViews[place.id];
+    }
+    nodeViews = trimmed;
+    localStorage.setItem(NODEVIEW_CACHE_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+
+async function loadNodeView(placeId, force = false) {
+  const place = settings.places.find((p) => p.id === placeId && p.kind === "node");
+  if (!place || !place.ref || nodeViewLoading.has(placeId) || !isAuthenticated) return;
+  const cached = nodeViews[placeId];
+  if (cached && !force && Date.now() - cached.timestamp < NODEVIEW_CACHE_TTL_MS) return;
+
+  nodeViewLoading.add(placeId);
+  try {
+    const data = await apiRequest(`/nodes/${encodeURIComponent(place.ref)}/children`);
+    nodeViews[placeId] = { items: data.items, timestamp: Date.now() };
+    saveNodeViewsCache();
+  } catch (e) {
+    if (!cached && view === placeId) {
+      nodeViewLoading.delete(placeId);
+      taskList.innerHTML = `<p class="list-empty">${escapeText(e.message)}</p>`;
+      return;
+    }
+    if (force) showToast(e.message, true);
+  } finally {
+    nodeViewLoading.delete(placeId);
+  }
+  if (view === placeId) render();
+}
+
+function renderNodeView() {
+  tabbar.classList.add("hidden");
+  btnBack.classList.add("hidden");
+  const place = currentPlace();
+  screenTitle.textContent = place ? place.name : "";
+
+  if (!isAuthenticated) {
+    screenCount.textContent = "";
+    taskList.innerHTML = '<p class="list-empty">API キーを設定するとノードが表示されます。</p>';
+    return;
+  }
+
+  const entry = nodeViews[view];
+  taskList.innerHTML = "";
+
+  if (!entry) {
+    screenCount.textContent = "";
+    taskList.innerHTML = '<div class="list-loading"><div class="spinner"></div></div>';
+    return;
+  }
+
+  screenCount.textContent = `${entry.items.length} 件`;
+  if (!entry.items.length) {
+    taskList.innerHTML = '<p class="list-empty">まだ何もありません</p>';
+    return;
+  }
+
+  for (const item of entry.items) {
+    taskList.appendChild(buildItemRow(item, { showTime: false, origin: view }));
+  }
 }
 
 function renderList(node) {
@@ -340,8 +718,8 @@ function renderNodeList() {
   for (const node of nodes) {
     const row = document.createElement("button");
     row.className = "node-row";
-    const ring = node.hasOverdue ? "#ee99a0" : "#8aadf4";
-    const track = node.hasOverdue ? "rgba(238,153,160,.28)" : "rgba(202,211,245,.16)";
+    const ring = node.hasOverdue ? "#e39098" : "#e6e8ec";
+    const track = node.hasOverdue ? "rgba(227,144,152,.28)" : "rgba(230,232,236,.16)";
     row.innerHTML = `
       <svg class="node-donut" width="20" height="20" viewBox="0 0 20 20">
         <circle cx="10" cy="10" r="8" fill="none" stroke="${track}" stroke-width="3"></circle>
@@ -418,8 +796,99 @@ function buildTaskRow(task, { showParent }) {
     toggleComplete(task, row);
   });
 
-  bindTaskRowSwipe(wrap, row, task);
+  bindRowSwipe(wrap, row, {
+    onToggleComplete: () => toggleComplete(task, row),
+    onDelete: () =>
+      openDeleteConfirm(normalizeTitle(task.plainName) || "（無題）", () => deleteTask(task, wrap, row)),
+    onTap: () => openSheetFor(task, "tasks"),
+  });
   return wrap;
+}
+
+// Daily / 登録ノードビューの行（タスクもメモも同じ操作を持つ）。
+// showTime: Daily のみ時刻の左カラムを出す。origin: 'daily' | <place id>。
+function buildItemRow(item, { showTime, origin }) {
+  const wrap = document.createElement("div");
+  wrap.className = "task-row-wrap";
+  wrap.dataset.taskId = item.id;
+
+  const underlay = document.createElement("div");
+  underlay.className = "task-row-underlay";
+  underlay.innerHTML = '<span class="underlay-complete">✓ 完了</span><span class="underlay-delete">削除</span>';
+  wrap.appendChild(underlay);
+
+  const row = document.createElement("div");
+  row.className = "task-row";
+
+  if (showTime) {
+    const time = document.createElement("div");
+    time.className = "memo-time";
+    time.textContent = itemTimeLabel(item.createdAt);
+    row.appendChild(time);
+  }
+
+  const body = document.createElement("div");
+  body.className = "task-row-body";
+
+  const name = document.createElement("div");
+  name.className = "memo-name";
+  name.textContent = normalizeTitle(item.plainName) || "（無題）";
+  body.appendChild(name);
+
+  if (item.note) {
+    const note = document.createElement("div");
+    note.className = "memo-note";
+    note.textContent = stripHtml(item.note);
+    body.appendChild(note);
+  }
+
+  // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。
+  if (item.todo) {
+    const tagRow = document.createElement("div");
+    tagRow.className = "item-tag-row";
+    const tag = document.createElement("button");
+    tag.className = "item-tag";
+    tag.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleItemComplete(item, row, origin);
+    });
+    tagRow.appendChild(tag);
+    if (item.due) {
+      const due = document.createElement("span");
+      due.className = "item-tag-due";
+      due.textContent = formatDueShort(item.due, localDateString());
+      tagRow.appendChild(due);
+    }
+    body.appendChild(tagRow);
+  }
+
+  row.appendChild(body);
+  wrap.appendChild(row);
+  applyItemRowState(row, item);
+
+  bindRowSwipe(wrap, row, {
+    onToggleComplete: () => toggleItemComplete(item, row, origin),
+    onDelete: () =>
+      openDeleteConfirm(normalizeTitle(item.plainName) || "（無題）", () => deleteItem(item, wrap, row, origin)),
+    onTap: () => openSheetFor(item, origin),
+  });
+  return wrap;
+}
+
+function applyItemRowState(row, item) {
+  row.classList.toggle("done", !!item.completed);
+  const tag = row.querySelector(".item-tag");
+  if (tag) {
+    tag.textContent = item.completed ? "DONE" : "TODO";
+    tag.classList.toggle("done", !!item.completed);
+  }
+  const due = row.querySelector(".item-tag-due");
+  if (due) {
+    const overdue = !item.completed && classifyDue(item.due, localDateString()) === "overdue";
+    due.classList.toggle("overdue", overdue);
+  }
+  const underlayComplete = row.parentElement?.querySelector(".underlay-complete");
+  if (underlayComplete) underlayComplete.textContent = item.completed ? "↩ 未完了" : "✓ 完了";
 }
 
 function applyRowState(row, task) {
@@ -451,43 +920,114 @@ async function toggleComplete(task, row) {
   }
 }
 
-async function deleteTask(task, wrap, row) {
+// 行の所属ビューごとのキャッシュ書き戻し
+function persistOriginCache(origin) {
+  if (origin === "tasks") setTasksCache(tasksState);
+  else if (origin === "daily") saveDailyCache();
+  else saveNodeViewsCache();
+}
+
+async function toggleItemComplete(item, row, origin) {
+  const target = !item.completed;
+  item.completed = target;
+  if (row) applyItemRowState(row, item);
+  persistOriginCache(origin);
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(item.id)}/${target ? "complete" : "uncomplete"}`, {
+      method: "POST",
+    });
+  } catch (e) {
+    item.completed = !target;
+    if (row) applyItemRowState(row, item);
+    persistOriginCache(origin);
+    showToast(e.message, true);
+  }
+}
+
+function animateRemove(wrap) {
+  if (!wrap) return;
   wrap.style.maxHeight = `${wrap.offsetHeight}px`;
   wrap.classList.add("removing");
   requestAnimationFrame(() => {
     wrap.style.maxHeight = "0";
     wrap.style.opacity = "0";
   });
+}
+
+function restoreRemove(wrap, row) {
+  if (!wrap) return;
+  wrap.classList.remove("removing");
+  wrap.style.maxHeight = "";
+  wrap.style.opacity = "";
+  if (row) row.style.transform = "";
+}
+
+async function deleteTask(task, wrap, row) {
+  animateRemove(wrap);
   try {
     await apiRequest(`/nodes/${encodeURIComponent(task.id)}`, { method: "DELETE" });
     tasksState = tasksState.filter((t) => t.id !== task.id);
     setTasksCache(tasksState);
-    setTimeout(() => wrap.remove(), 220);
+    if (wrap) setTimeout(() => wrap.remove(), 220);
+    else render();
     showToast("削除しました");
   } catch (e) {
-    wrap.classList.remove("removing");
-    wrap.style.maxHeight = "";
-    wrap.style.opacity = "";
-    row.style.transform = "";
+    restoreRemove(wrap, row);
+    showToast(e.message, true);
+  }
+}
+
+function removeItemFromOrigin(id, origin) {
+  if (origin === "daily") {
+    // ノートが 0 件になった日は見出しごと消す
+    dailyGroups = dailyGroups
+      .map((g) => ({ ...g, items: g.items.filter((i) => i.id !== id) }))
+      .filter((g) => g.items.length > 0);
+    saveDailyCache();
+  } else if (nodeViews[origin]) {
+    nodeViews[origin] = {
+      ...nodeViews[origin],
+      items: nodeViews[origin].items.filter((i) => i.id !== id),
+    };
+    saveNodeViewsCache();
+  }
+}
+
+async function deleteItem(item, wrap, row, origin) {
+  animateRemove(wrap);
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    removeItemFromOrigin(item.id, origin);
+    if (wrap) setTimeout(() => wrap.remove(), 220);
+    else render();
+    showToast("削除しました");
+  } catch (e) {
+    restoreRemove(wrap, row);
     showToast(e.message, true);
   }
 }
 
 // Sets the due date ({ date, time? }) or clears it (dateStr = null).
-async function scheduleTask(task, dateStr, timeStr) {
-  await apiRequest(`/nodes/${encodeURIComponent(task.id)}/schedule`, {
+async function scheduleEntity(entity, dateStr, timeStr, origin) {
+  await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/schedule`, {
     method: "POST",
     body: JSON.stringify({ date: dateStr, time: timeStr || undefined }),
   });
-  task.due = dateStr ? { date: dateStr, time: timeStr || null } : null;
-  setTasksCache(tasksState);
+  entity.due = dateStr ? { date: dateStr, time: timeStr || null } : null;
+  persistOriginCache(origin);
   render();
 }
 
+function scheduleTask(task, dateStr, timeStr) {
+  return scheduleEntity(task, dateStr, timeStr, "tasks");
+}
+
 // Swipe (Pointer Events, so both touch and mouse drag work): right =
-// complete, left = delete. Direction is locked in on the first move past
-// the threshold; vertical pans stay with the browser via touch-action.
-function bindTaskRowSwipe(wrap, row, task) {
+// complete toggle, left = delete confirmation, tap = detail sheet. Shared by
+// every row in every view (tasks and memos are the same Workflowy nodes).
+// Direction is locked in on the first move past the threshold; vertical pans
+// stay with the browser via touch-action.
+function bindRowSwipe(wrap, row, handlers) {
   let activePointerId = null;
   let startX = 0;
   let startY = 0;
@@ -525,12 +1065,17 @@ function bindTaskRowSwipe(wrap, row, task) {
     dragging = true;
     dx = clampDx(curDx);
     row.style.transform = `translateX(${dx}px)`;
+    // 背面の色: 方向としきい値到達で濃さを変える（反対側のラベルは消す）
+    wrap.classList.toggle("swipe-right", dx > 0);
+    wrap.classList.toggle("swipe-left", dx < 0);
+    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx) !== null);
   });
 
   const finish = (e, commit) => {
     if (e.pointerId !== activePointerId) return;
     activePointerId = null;
     row.classList.remove("dragging");
+    wrap.classList.remove("swipe-right", "swipe-left", "past-threshold");
     if (dragging) {
       // The click event fires right after pointerup; swallow it once.
       suppressClick = true;
@@ -540,9 +1085,9 @@ function bindTaskRowSwipe(wrap, row, task) {
       const action = commit ? resolveSwipeAction(dx) : null;
       snapBack(row);
       if (action === "complete") {
-        toggleComplete(task, row); // toggle: right swipe on a completed row uncompletes
+        handlers.onToggleComplete(); // toggle: right swipe on a completed row uncompletes
       } else if (action === "delete") {
-        openDeleteConfirm(task, wrap, row);
+        handlers.onDelete();
       }
     }
     direction = null;
@@ -559,7 +1104,7 @@ function bindTaskRowSwipe(wrap, row, task) {
       e.preventDefault();
       return;
     }
-    openTaskSheet(task);
+    handlers.onTap();
   });
 }
 
@@ -571,24 +1116,46 @@ function snapBack(row) {
 
 // ==================== Detail sheet ====================
 
-function fillTaskSheet(task) {
+// タスクとメモで中身を分ける: タスクは定義リスト、メモは読むための画面
+// （時刻 · 場所、大きめタイトル、note の面）。
+function fillSheet() {
+  const entity = sheetTask;
   const today = localDateString();
 
-  sheetTaskTitle.textContent = normalizeTitle(task.plainName) || "（無題）";
-  sheetTaskDue.textContent = formatDueDetail(task.due, today);
-  sheetTaskDue.classList.toggle("overdue", !task.completed && classifyDue(task.due, today) === "overdue");
-  sheetTaskDue.classList.toggle("none", !task.due);
-  sheetTaskNode.textContent = task.parentPath && task.parentPath.length
-    ? normalizeTitle(task.parentPath[task.parentPath.length - 1])
-    : "—";
-  sheetTaskNote.textContent = task.note ? stripHtml(task.note) : "—";
-  sheetTaskLink.href = workflowyUrl(task.id);
-  btnSheetComplete.textContent = task.completed ? "未完了に戻す" : "完了";
+  sheetTaskTitle.textContent = normalizeTitle(entity.plainName) || "（無題）";
+  sheetTaskTitle.classList.toggle("memo", sheetIsMemo);
+  sheetItemMeta.classList.toggle("hidden", !sheetIsMemo);
+  sheetTaskProps.classList.toggle("hidden", sheetIsMemo);
+  sheetItemNote.classList.toggle("hidden", !sheetIsMemo || !entity.note);
+  btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo);
+
+  if (sheetIsMemo) {
+    const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
+    sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
+    if (entity.note) sheetItemNote.textContent = stripHtml(entity.note);
+  } else {
+    sheetTaskDue.textContent = formatDueDetail(entity.due, today);
+    sheetTaskDue.classList.toggle("overdue", !entity.completed && classifyDue(entity.due, today) === "overdue");
+    sheetTaskDue.classList.toggle("none", !entity.due);
+    sheetTaskNode.textContent =
+      sheetOrigin === "tasks"
+        ? entity.parentPath && entity.parentPath.length
+          ? normalizeTitle(entity.parentPath[entity.parentPath.length - 1])
+          : "—"
+        : placeLabelForOrigin(sheetOrigin) || "—";
+    sheetTaskNote.textContent = entity.note ? stripHtml(entity.note) : "—";
+  }
+
+  sheetTaskLink.href = workflowyUrl(entity.id);
+  btnSheetComplete.textContent = entity.completed ? "未完了に戻す" : "完了にする";
+  btnSheetComplete.classList.toggle("primary", !entity.completed);
 }
 
-function openTaskSheet(task) {
-  sheetTask = task;
-  fillTaskSheet(task);
+function openSheetFor(entity, origin) {
+  sheetTask = entity;
+  sheetOrigin = origin;
+  sheetIsMemo = origin !== "tasks" && !entity.todo;
+  fillSheet();
   sheetDueEditor.classList.add("hidden");
   sheetNoteEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
@@ -619,10 +1186,10 @@ function toggleNoteEditor() {
 // Applies a due change from the detail sheet editor and refreshes the view.
 async function applySheetDue(dateStr, timeStr) {
   if (!sheetTask) return;
-  const task = sheetTask;
+  const entity = sheetTask;
   try {
-    await scheduleTask(task, dateStr, timeStr);
-    fillTaskSheet(task);
+    await scheduleEntity(entity, dateStr, timeStr, sheetOrigin);
+    fillSheet();
     sheetDueEditor.classList.add("hidden");
     showToast(dateStr ? "期限を設定しました" : "期限を解除しました");
   } catch (e) {
@@ -632,17 +1199,17 @@ async function applySheetDue(dateStr, timeStr) {
 
 async function saveSheetNote() {
   if (!sheetTask) return;
-  const task = sheetTask;
+  const entity = sheetTask;
   const note = sheetNoteInput.value;
   btnSheetSaveNote.disabled = true;
   try {
-    await apiRequest(`/nodes/${encodeURIComponent(task.id)}/note`, {
+    await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/note`, {
       method: "POST",
       body: JSON.stringify({ note }),
     });
-    task.note = note || null;
-    setTasksCache(tasksState);
-    fillTaskSheet(task);
+    entity.note = note || null;
+    persistOriginCache(sheetOrigin);
+    fillSheet();
     sheetNoteEditor.classList.add("hidden");
     showToast("メモを保存しました");
   } catch (e) {
@@ -662,30 +1229,67 @@ function closeSheets() {
 
 // ==================== Delete confirmation ====================
 
-function openDeleteConfirm(task, wrap, row) {
-  pendingDelete = { task, wrap, row };
-  sheetDeleteTitle.textContent = normalizeTitle(task.plainName) || "（無題）";
+function openDeleteConfirm(title, run) {
+  pendingDelete = { run };
+  sheetDeleteTitle.textContent = title;
   sheetDeleteEl.classList.remove("hidden");
 }
 
 function confirmDelete() {
   if (!pendingDelete) return;
-  const { task, wrap, row } = pendingDelete;
+  const { run } = pendingDelete;
   pendingDelete = null;
   sheetDeleteEl.classList.add("hidden");
-  deleteTask(task, wrap, row);
+  run();
 }
 
-// ==================== Add sheet ====================
+// ==================== Compose sheet ====================
+
+const ICON_CALENDAR = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+const ICON_FOLDER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+
+function destIconSvg(dest, size = 16) {
+  const svg = !dest || dest.kind === "daily" ? ICON_CALENDAR : ICON_FOLDER;
+  return svg.replace('width="16" height="16"', `width="${size}" height="${size}"`);
+}
+
+let composeMode = "task"; // 'task' | 'note'
+let composeDest = null; // views.js の ComposeDest
+let pickerCustomDay = false; // セレクタで「日付…」チップを選んでいるか
+let composeTreeLoaded = false;
 
 function openAddSheet() {
   taskNameInput.value = "";
+  noteInput.value = "";
   taskDateInput.value = "";
   taskTimeInput.value = "";
   addDue = "today";
+  composeMode = "task";
+  // 既定の書き込み先は表示中のビューに対応する場所
+  composeDest = composeDestForView(view, settings.places, settings.lastDest);
+  pickerCustomDay = false;
+  composePicker.classList.add("hidden");
+  composeMain.classList.remove("hidden");
+  renderCompose();
   renderDueChips();
   sheetAddEl.classList.remove("hidden");
   taskNameInput.focus();
+}
+
+function renderCompose() {
+  composeModebar.querySelectorAll(".tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === composeMode);
+  });
+  const isTask = composeMode === "task";
+  composeDestRow.classList.toggle("hidden", !isTask);
+  composeTaskBody.classList.toggle("hidden", !isTask);
+  composeNoteBody.classList.toggle("hidden", isTask);
+
+  const label = destLabel(composeDest, settings.places);
+  composeDestName.textContent = label;
+  composeDestIcon.innerHTML = destIconSvg(composeDest, 16);
+  composeDestSmallName.textContent = label;
+  composeDestSmallIcon.innerHTML = destIconSvg(composeDest, 13);
 }
 
 function renderDueChips() {
@@ -708,15 +1312,140 @@ function resolveAddDue() {
   return due ? { date: due.date, time: null } : null;
 }
 
+// ---- 送信先セレクタ（シート内で本体と入れ替える） ----
+
+function openPicker() {
+  composeMain.classList.add("hidden");
+  composePicker.classList.remove("hidden");
+  if (!composeTreeLoaded) {
+    composeTreeLoaded = true;
+    composeNodeTree.load();
+  }
+  renderPicker();
+}
+
+function closePicker() {
+  composePicker.classList.add("hidden");
+  composeMain.classList.remove("hidden");
+  renderCompose();
+  (composeMode === "task" ? taskNameInput : noteInput).focus();
+}
+
+function renderPicker() {
+  const todayStr = localDateString();
+  // 書き込み先がノードのときは日付の概念が無いので Daily チップは選択されない
+  const dayValue = composeDest && composeDest.kind === "daily" ? composeDest.day || todayStr : null;
+  const chipDates = { today: todayStr, tomorrow: addDays(todayStr, 1), week: nextMonday(todayStr) };
+
+  pickerDailyChips.querySelectorAll(".picker-day").forEach((chip) => {
+    const key = chip.dataset.day;
+    const active =
+      dayValue !== null && (key === "custom" ? pickerCustomDay : !pickerCustomDay && chipDates[key] === dayValue);
+    chip.classList.toggle("active", active);
+  });
+  pickerDateInput.classList.toggle("hidden", !(dayValue !== null && pickerCustomDay));
+  if (dayValue !== null && pickerCustomDay) pickerDateInput.value = dayValue;
+
+  pickerPlaces.innerHTML = "";
+  const nodePlaces = settings.places.filter((p) => p.kind === "node");
+  if (!nodePlaces.length) {
+    pickerPlaces.innerHTML = '<p class="picker-empty">登録済みの場所はありません</p>';
+  }
+  for (const place of nodePlaces) {
+    const selected = composeDest && composeDest.kind === "place" && composeDest.placeId === place.id;
+    const btn = document.createElement("button");
+    btn.className = "picker-place" + (selected ? " selected" : "");
+    btn.innerHTML =
+      `<span class="compose-dest-icon">${ICON_FOLDER}</span><span class="picker-place-name"></span>` +
+      (selected ? '<span class="picker-check">✓</span>' : "");
+    btn.querySelector(".picker-place-name").textContent = place.name;
+    btn.addEventListener("click", () => {
+      composeDest = { kind: "place", placeId: place.id };
+      pickerCustomDay = false;
+      renderPicker();
+    });
+    pickerPlaces.appendChild(btn);
+  }
+}
+
+// ---- 送信 ----
+
+// 送信直後の楽観反映: 読み込み済みの Daily グループに行を差し込む
+function insertDailyItem(date, item) {
+  const group = dailyGroups.find((g) => g.date === date);
+  if (group) {
+    group.items = [item, ...group.items];
+  } else {
+    const newGroup = { date, items: [item], hasMore: false };
+    const at = dailyGroups.findIndex((g) => g.date < date);
+    if (at >= 0) dailyGroups.splice(at, 0, newGroup);
+    else if (!dailyHasMore) dailyGroups.push(newGroup);
+    // else: 未読み込みの過去領域なので差し込まない（再取得時に現れる）
+  }
+  saveDailyCache();
+}
+
+function afterComposeSend(dest, { id, name, note, todo, due }) {
+  const now = Math.floor(Date.now() / 1000);
+  const item = {
+    id: id || `temp-${Date.now()}`,
+    name,
+    plainName: name,
+    note: note || null,
+    todo,
+    completed: false,
+    due: due || null,
+    createdAt: now,
+  };
+  const target = destSendTarget(dest, settings.places);
+  if (!target) return;
+
+  if (target.targetType === "calendar") {
+    insertDailyItem(target.day, item);
+  } else if (dest.kind === "place" && nodeViews[dest.placeId]) {
+    nodeViews[dest.placeId] = {
+      ...nodeViews[dest.placeId],
+      items: [item, ...nodeViews[dest.placeId].items],
+    };
+    saveNodeViewsCache();
+  }
+
+  if (todo) {
+    const parentName =
+      dest.kind === "daily"
+        ? "Daily"
+        : dest.kind === "place"
+          ? settings.places.find((p) => p.id === dest.placeId)?.name
+          : dest.name;
+    tasksState = [
+      {
+        id: item.id,
+        name,
+        plainName: name,
+        note: item.note,
+        parentId: target.parentId || null,
+        parentPath: parentName ? [parentName] : [],
+        createdAt: now,
+        due: item.due,
+        completed: false,
+      },
+      ...tasksState,
+    ];
+    setTasksCache(tasksState);
+  }
+  render();
+}
+
 async function handleAddTask() {
   const name = taskNameInput.value.trim();
   if (!name) {
     closeSheets();
     return;
   }
-  const dest = settings.destinations.find((d) => d.id === settings.selectedDestinationId);
-  if (!dest) {
-    showToast("保存先が未設定です。設定から追加してください。", true);
+  const dest = composeDest;
+  const target = destSendTarget(dest, settings.places);
+  if (!target) {
+    showToast("書き込み先を選択してください", true);
     return;
   }
 
@@ -724,12 +1453,7 @@ async function handleAddTask() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({
-        targetType: dest.type,
-        parentId: dest.type === "node" ? dest.nodeId : undefined,
-        name,
-        layoutMode: "todo",
-      }),
+      body: JSON.stringify({ ...target, name, layoutMode: "todo" }),
     });
 
     const due = resolveAddDue();
@@ -740,26 +1464,48 @@ async function handleAddTask() {
       });
     }
 
-    const newTask = {
-      id: result.item_id || `temp-${Date.now()}`,
-      name,
-      plainName: name,
-      note: null,
-      parentId: dest.type === "node" ? dest.nodeId : null,
-      parentPath: dest.type === "node" ? [dest.name] : [],
-      createdAt: Math.floor(Date.now() / 1000),
-      due,
-      completed: false,
-    };
-    tasksState = [newTask, ...tasksState];
-    setTasksCache(tasksState);
-    render();
+    settings.lastDest = dest;
+    saveSettings();
+    afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
     closeSheets();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
   } finally {
     btnSaveTask.disabled = false;
+  }
+}
+
+async function handleSendNote() {
+  const draft = splitNoteDraft(noteInput.value);
+  if (!draft) {
+    closeSheets();
+    return;
+  }
+  const dest = composeDest;
+  const target = destSendTarget(dest, settings.places);
+  if (!target) {
+    showToast("書き込み先を選択してください", true);
+    return;
+  }
+
+  btnSaveNote.disabled = true;
+  try {
+    const result = await apiRequest("/send", {
+      method: "POST",
+      body: JSON.stringify({ ...target, name: draft.name, note: draft.note || undefined }),
+    });
+    settings.lastDest = dest;
+    saveSettings();
+    afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
+    closeSheets();
+    // ノートを Daily に書いたときは Daily ビューへ移動してその行を見せる
+    if (dest.kind === "daily" && view !== "daily") switchView("daily");
+    showToast("追加しました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSaveNote.disabled = false;
   }
 }
 
@@ -808,8 +1554,43 @@ function bindEvents() {
     }
   });
 
+  // compose: モード切り替え / 送信先セレクタ / ノート送信
+  composeModebar.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      composeMode = btn.dataset.mode;
+      renderCompose();
+      (composeMode === "task" ? taskNameInput : noteInput).focus();
+    });
+  });
+  btnComposeDest.addEventListener("click", openPicker);
+  btnComposeDestSmall.addEventListener("click", openPicker);
+  btnPickerDone.addEventListener("click", closePicker);
+  btnSaveNote.addEventListener("click", handleSendNote);
+
+  pickerDailyChips.querySelectorAll(".picker-day").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const key = chip.dataset.day;
+      const todayStr = localDateString();
+      if (key === "custom") {
+        pickerCustomDay = true;
+        composeDest = { kind: "daily", day: pickerDateInput.value || todayStr };
+      } else {
+        pickerCustomDay = false;
+        const day =
+          key === "today" ? null : key === "tomorrow" ? addDays(todayStr, 1) : nextMonday(todayStr);
+        composeDest = { kind: "daily", day };
+      }
+      renderPicker();
+    });
+  });
+  pickerDateInput.addEventListener("input", () => {
+    if (pickerDateInput.value) {
+      composeDest = { kind: "daily", day: pickerDateInput.value };
+      renderPicker();
+    }
+  });
+
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
-  btnSnoozeWeek.addEventListener("click", () => snoozeSheetTask("week"));
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
   sheetTaskNote.addEventListener("click", toggleNoteEditor);
@@ -839,14 +1620,39 @@ function bindEvents() {
 
   btnSheetComplete.addEventListener("click", () => {
     if (!sheetTask) return;
-    toggleComplete(sheetTask, findRow(sheetTask.id));
+    const row = findRow(sheetTask.id);
+    if (sheetOrigin === "tasks") toggleComplete(sheetTask, row);
+    else toggleItemComplete(sheetTask, row, sheetOrigin);
     closeSheets();
+  });
+
+  btnSheetDelete.addEventListener("click", () => {
+    if (!sheetTask) return;
+    const entity = sheetTask;
+    const origin = sheetOrigin;
+    const wrap = taskList.querySelector(`[data-task-id="${CSS.escape(entity.id)}"]`);
+    const row = wrap ? wrap.querySelector(".task-row") : null;
+    sheetTaskEl.classList.add("hidden");
+    openDeleteConfirm(normalizeTitle(entity.plainName) || "（無題）", () => {
+      if (origin === "tasks") deleteTask(entity, wrap, row);
+      else deleteItem(entity, wrap, row, origin);
+    });
+  });
+
+  bindViewBarSwipe();
+
+  // Daily の無限スクロール（下端付近で過去分を自動読み込み）
+  taskList.addEventListener("scroll", () => {
+    if (view !== "daily" || !dailyHasMore || dailyLoading) return;
+    if (taskList.scrollTop + taskList.clientHeight >= taskList.scrollHeight - 200) {
+      loadDailyMore();
+    }
   });
 
   // Re-fetch when the app returns to the foreground, so edits made in
   // Workflowy itself show up (60s cache still applies).
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) loadTasks();
+    if (!document.hidden) loadCurrentView();
   });
 }
 
@@ -859,10 +1665,11 @@ async function snoozeSheetTask(option) {
   if (!sheetTask) return;
   const due = dueShortcut(option);
   if (!due) return;
-  const task = sheetTask;
+  const entity = sheetTask;
+  const origin = sheetOrigin;
   closeSheets();
   try {
-    await scheduleTask(task, due.date);
+    await scheduleEntity(entity, due.date, undefined, origin);
     showToast(option === "tomorrow" ? "明日に設定しました" : "来週に設定しました");
   } catch (e) {
     showToast(e.message, true);
@@ -874,7 +1681,7 @@ async function snoozeSheetTask(option) {
 function openSettings() {
   settingsDate.textContent = formatHeaderDate();
   updateApiKeyUI();
-  renderDestinationList();
+  renderPlaceList();
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
@@ -933,7 +1740,10 @@ function bindSettingsEvents() {
     }
   });
 
-  btnSyncNow.addEventListener("click", () => loadTasks(true));
+  btnSyncNow.addEventListener("click", () => {
+    loadTasks(true);
+    if (view !== "tasks") loadCurrentView(true);
+  });
 
   btnToggleNotifications.addEventListener("click", () => {
     if (pushSubscribed) {
@@ -947,17 +1757,12 @@ function bindSettingsEvents() {
   btnAddDestination.addEventListener("click", () => {
     panelAddDest.classList.remove("hidden");
     selectedTreeNodeId = null;
-    nodeTreePath = [];
+    settingsTreeRefPath = "";
     destNameInput.value = "";
-    setDestType("node");
-    loadNodeTree();
+    settingsNodeTree.reset();
   });
 
-  destTypeRadios.forEach((radio) => {
-    radio.addEventListener("change", () => updateDestTypeUI(getDestType()));
-  });
-
-  btnSaveDestination.addEventListener("click", saveDestination);
+  btnSaveDestination.addEventListener("click", savePlace);
   btnCancelDestination.addEventListener("click", () => panelAddDest.classList.add("hidden"));
 }
 
@@ -965,208 +1770,336 @@ function renderSyncLabel() {
   syncLabel.textContent = formatSyncAgo(Date.now(), lastSyncMs);
 }
 
-// ==================== Destinations ====================
+// ==================== Settings 場所カード ====================
 
-// Destination naming (calendar destinations get a marker icon)
-const calendarTypeIcon = `<svg class="dest-type-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="3" y="4" width="18" height="18" rx="2" />
-  <line x1="16" y1="2" x2="16" y2="6" />
-  <line x1="8" y1="2" x2="8" y2="6" />
-  <line x1="3" y1="10" x2="21" y2="10" />
-</svg>`;
+const ICON_GRIP = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>`;
+const ICON_EYE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></svg>`;
+const ICON_EYE_OFF = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
 
-function destinationNameHtml(dest) {
-  return `${dest.type === "calendar" ? calendarTypeIcon : ""}${escapeText(dest.name)}`;
+function renderPlaceList() {
+  placeCount.textContent = String(settings.places.length);
+  placeList.innerHTML = "";
+
+  for (const place of settings.places) {
+    const builtin = place.kind !== "node";
+    const row = document.createElement("div");
+    row.className = "place-row";
+    row.dataset.placeId = place.id;
+    row.innerHTML =
+      `<button class="place-grip" title="並べ替え（⌥↑ / ⌥↓）">${ICON_GRIP}</button>` +
+      '<div class="place-info">' +
+      '<div class="place-name"><span class="place-name-text"></span>' +
+      (builtin ? '<span class="place-badge">組み込み</span>' : "") +
+      "</div>" +
+      '<div class="place-ref hidden"></div>' +
+      "</div>" +
+      '<button class="place-eye" title="ビューへの表示を切り替え"></button>' +
+      (builtin ? "" : `<button class="place-delete" title="削除">${ICON_TRASH}</button>`);
+
+    row.querySelector(".place-name-text").textContent = place.name;
+    if (place.refPath) {
+      const ref = row.querySelector(".place-ref");
+      ref.textContent = place.refPath;
+      ref.classList.remove("hidden");
+    }
+
+    const eye = row.querySelector(".place-eye");
+    eye.innerHTML = place.inView ? ICON_EYE : ICON_EYE_OFF;
+    eye.classList.toggle("off", !place.inView);
+    eye.addEventListener("click", () => togglePlaceView(place.id));
+
+    const del = row.querySelector(".place-delete");
+    if (del) del.addEventListener("click", () => deletePlace(place.id));
+
+    bindPlaceReorder(row);
+    placeList.appendChild(row);
+  }
 }
 
-function renderDestinationList() {
-  destinationList.innerHTML = "";
-  if (!settings.destinations.length) {
-    destinationList.innerHTML = '<p class="destination-empty">未設定</p>';
+function togglePlaceView(id) {
+  const next = toggleInView(settings.places, id);
+  if (!next) {
+    showToast("最後のビューは非表示にできません", true);
     return;
   }
-  for (const dest of settings.destinations) {
-    const isActive = dest.id === settings.selectedDestinationId;
-    const div = document.createElement("div");
-    div.className = "destination-item" + (isActive ? " active" : "");
-    div.innerHTML = `
-      <span class="destination-item-name">${destinationNameHtml(dest)}</span>
-      <button class="destination-item-delete" title="削除">&times;</button>
-    `;
-    div.addEventListener("click", (e) => {
-      if (e.target.closest(".destination-item-delete")) return;
-      settings.selectedDestinationId = dest.id;
-      saveSettings();
-      renderDestinationList();
-    });
-    div.querySelector(".destination-item-delete").addEventListener("click", (e) => {
-      e.stopPropagation();
-      settings.destinations = settings.destinations.filter((d) => d.id !== dest.id);
-      if (settings.selectedDestinationId === dest.id) {
-        settings.selectedDestinationId = settings.destinations[0]?.id || "";
-      }
-      saveSettings();
-      renderDestinationList();
-    });
-    destinationList.appendChild(div);
+  settings.places = next;
+  saveSettings();
+  renderPlaceList();
+  // 表示中のビューを OFF にした場合は先頭の表示中ビューへ自動的に移動する
+  const ensured = ensureVisibleView(settings.places, view);
+  if (ensured !== view) switchView(ensured);
+  else render();
+}
+
+function deletePlace(id) {
+  const place = settings.places.find((p) => p.id === id);
+  if (!place || place.kind !== "node") return; // 組み込みの Tasks / Daily は削除不可
+  settings.places = settings.places.filter((p) => p.id !== id);
+  if (settings.lastDest && settings.lastDest.kind === "place" && settings.lastDest.placeId === id) {
+    settings.lastDest = null;
   }
+  saveSettings();
+  saveNodeViewsCache(); // 削除した場所のビューキャッシュを落とす
+  renderPlaceList();
+  const ensured = ensureVisibleView(settings.places, view);
+  if (ensured !== view) switchView(ensured);
+  else render();
+  showToast("場所を削除しました");
 }
 
-function getDestType() {
-  return document.querySelector('input[name="dest-type"]:checked')?.value || "node";
-}
+// ドラッグ&ドロップで並べ替え（確定時にのみ保存）。キーボードは ⌥↑ / ⌥↓。
+function bindPlaceReorder(row) {
+  const grip = row.querySelector(".place-grip");
 
-function setDestType(type) {
-  destTypeRadios.forEach((radio) => {
-    radio.checked = radio.value === type;
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try {
+      grip.setPointerCapture(e.pointerId);
+    } catch {}
+    row.classList.add("dragging");
+    placeList.classList.add("reordering");
+
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      for (const other of placeList.querySelectorAll(".place-row")) {
+        if (other === row) continue;
+        const rect = other.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const rowIsAfter = !!(other.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (ev.clientY < mid && rowIsAfter) {
+          placeList.insertBefore(row, other);
+          break;
+        }
+        if (ev.clientY > mid && !rowIsAfter) {
+          placeList.insertBefore(row, other.nextSibling);
+          break;
+        }
+      }
+    };
+
+    const finish = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", finish);
+      grip.removeEventListener("pointercancel", finish);
+      row.classList.remove("dragging");
+      placeList.classList.remove("reordering");
+      const ids = [...placeList.querySelectorAll(".place-row")].map((el) => el.dataset.placeId);
+      settings.places = reorderPlaces(settings.places, ids);
+      saveSettings();
+      render(); // ビューバーの並びに即反映
+    };
+
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", finish);
+    grip.addEventListener("pointercancel", finish);
   });
-  updateDestTypeUI(type);
+
+  grip.addEventListener("keydown", (e) => {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const id = row.dataset.placeId;
+    settings.places = movePlace(settings.places, id, e.key === "ArrowUp" ? -1 : 1);
+    saveSettings();
+    renderPlaceList();
+    render();
+    placeList.querySelector(`[data-place-id="${CSS.escape(id)}"] .place-grip`)?.focus();
+  });
 }
 
-function updateDestTypeUI(type) {
-  // Calendar destinations write to Workflowy's native calendar; there is no
-  // node to pick and the name is fixed to "Daily Note"
-  const isCalendar = type === "calendar";
-  nodeTree.classList.toggle("hidden", isCalendar);
-  destNameInput.closest(".input-group").classList.toggle("hidden", isCalendar);
-}
+let settingsTreeRefPath = "";
 
-function saveDestination() {
-  const type = getDestType();
-  if (type === "node" && !selectedTreeNodeId) {
+function savePlace() {
+  if (!selectedTreeNodeId) {
     showToast("ノードを選択してください", true);
     return;
   }
-  const name = type === "calendar" ? "Daily Note" : destNameInput.value.trim();
+  const name = destNameInput.value.trim();
   if (!name) {
     showToast("表示名を入力してください", true);
     return;
   }
 
-  const dest = {
-    id: crypto.randomUUID(),
-    type,
-    nodeId: type === "node" ? selectedTreeNodeId : undefined,
-    name,
-  };
-  settings.destinations.push(dest);
-  settings.selectedDestinationId = dest.id;
+  settings.places = [
+    ...settings.places,
+    {
+      id: crypto.randomUUID(),
+      kind: "node",
+      name,
+      ref: selectedTreeNodeId,
+      refPath: settingsTreeRefPath || undefined,
+      inView: true,
+    },
+  ];
   saveSettings();
-  renderDestinationList();
+  renderPlaceList();
+  render();
   panelAddDest.classList.add("hidden");
-  showToast("保存先を追加しました");
+  showToast("場所を追加しました");
 }
 
-// ==================== Node tree (destination picker) ====================
+// ==================== Node tree picker ====================
 
-async function loadNodeTree(parentId) {
-  nodeTree.innerHTML = '<div class="tree-empty"><div class="spinner"></div></div>';
-  try {
-    const pid = parentId || "None";
-    const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
-    renderNodeTree(nodes);
-  } catch (e) {
-    nodeTree.innerHTML = `<p class="tree-empty">${escapeText(e.message)}</p>`;
+// 階層をたどってノードを 1 つ選ぶピッカー。設定の「場所を追加」と compose の
+// 送信先セレクタで使う（それぞれ独立した状態を持つ）。
+function createNodeTreePicker(container, { onSelect }) {
+  let path = []; // [{ id, name }] breadcrumb trail
+  let selectedId = null;
+
+  async function load(parentId) {
+    container.innerHTML = '<div class="tree-empty"><div class="spinner"></div></div>';
+    try {
+      const pid = parentId || "None";
+      const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
+      renderTree(nodes);
+    } catch (e) {
+      container.innerHTML = `<p class="tree-empty">${escapeText(e.message)}</p>`;
+    }
   }
-}
 
-function renderNodeTree(nodes) {
-  nodeTree.innerHTML = "";
+  function select(id, name) {
+    selectedId = id;
+    onSelect(id ? { id, name } : null);
+  }
 
-  // Breadcrumb navigation
-  if (nodeTreePath.length > 0) {
-    const breadcrumb = document.createElement("div");
-    breadcrumb.className = "node-tree-breadcrumb";
+  function renderTree(nodes) {
+    container.innerHTML = "";
 
-    const rootLink = document.createElement("span");
-    rootLink.className = "breadcrumb-link";
-    rootLink.textContent = "Home";
-    rootLink.addEventListener("click", () => {
-      nodeTreePath = [];
-      selectedTreeNodeId = null;
-      destNameInput.value = "";
-      loadNodeTree();
-    });
-    breadcrumb.appendChild(rootLink);
+    // Breadcrumb navigation
+    if (path.length > 0) {
+      const breadcrumb = document.createElement("div");
+      breadcrumb.className = "node-tree-breadcrumb";
 
-    for (let i = 0; i < nodeTreePath.length; i++) {
-      const sep = document.createElement("span");
-      sep.className = "breadcrumb-sep";
-      sep.textContent = " / ";
-      breadcrumb.appendChild(sep);
+      const rootLink = document.createElement("span");
+      rootLink.className = "breadcrumb-link";
+      rootLink.textContent = "Home";
+      rootLink.addEventListener("click", () => {
+        path = [];
+        select(null, "");
+        load();
+      });
+      breadcrumb.appendChild(rootLink);
 
-      const crumb = nodeTreePath[i];
-      if (i < nodeTreePath.length - 1) {
-        const link = document.createElement("span");
-        link.className = "breadcrumb-link";
-        link.textContent = crumb.name;
-        link.addEventListener("click", () => {
-          nodeTreePath = nodeTreePath.slice(0, i + 1);
-          selectedTreeNodeId = crumb.id;
-          destNameInput.value = crumb.name;
-          loadNodeTree(crumb.id);
-        });
-        breadcrumb.appendChild(link);
-      } else {
-        const current = document.createElement("span");
-        current.className = "breadcrumb-current";
-        current.textContent = crumb.name;
-        breadcrumb.appendChild(current);
+      for (let i = 0; i < path.length; i++) {
+        const sep = document.createElement("span");
+        sep.className = "breadcrumb-sep";
+        sep.textContent = " / ";
+        breadcrumb.appendChild(sep);
+
+        const crumb = path[i];
+        if (i < path.length - 1) {
+          const link = document.createElement("span");
+          link.className = "breadcrumb-link";
+          link.textContent = crumb.name;
+          link.addEventListener("click", () => {
+            path = path.slice(0, i + 1);
+            select(crumb.id, crumb.name);
+            load(crumb.id);
+          });
+          breadcrumb.appendChild(link);
+        } else {
+          const current = document.createElement("span");
+          current.className = "breadcrumb-current";
+          current.textContent = crumb.name;
+          breadcrumb.appendChild(current);
+        }
       }
+
+      container.appendChild(breadcrumb);
     }
 
-    nodeTree.appendChild(breadcrumb);
+    if (!nodes.length) {
+      const msg = document.createElement("p");
+      msg.className = "tree-empty";
+      msg.textContent = "子ノードがありません";
+      container.appendChild(msg);
+      return;
+    }
+
+    for (const node of nodes) {
+      const text = normalizeTitle(node.name) || "(無題)";
+      const div = document.createElement("div");
+      const isCompleted = node.completedAt !== null;
+      div.className =
+        "node-tree-item" +
+        (selectedId === node.id ? " selected" : "") +
+        (isCompleted ? " completed" : "");
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "node-tree-item-name";
+      nameSpan.textContent = text;
+      div.appendChild(nameSpan);
+
+      const drillBtn = document.createElement("span");
+      drillBtn.className = "node-tree-drill";
+      drillBtn.textContent = "▶";
+      drillBtn.title = "子ノードを表示";
+      div.appendChild(drillBtn);
+
+      // Click name to select
+      nameSpan.addEventListener("click", (e) => {
+        e.stopPropagation();
+        select(node.id, text);
+        container.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
+        div.classList.add("selected");
+      });
+
+      // Click drill button to navigate into children
+      drillBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        select(node.id, text);
+        path.push({ id: node.id, name: text });
+        load(node.id);
+      });
+
+      container.appendChild(div);
+    }
   }
 
-  if (!nodes.length) {
-    const msg = document.createElement("p");
-    msg.className = "tree-empty";
-    msg.textContent = "子ノードがありません";
-    nodeTree.appendChild(msg);
-    return;
+  function reset() {
+    path = [];
+    selectedId = null;
+    return load();
   }
 
-  for (const node of nodes) {
-    const text = normalizeTitle(node.name) || "(無題)";
-    const div = document.createElement("div");
-    const isCompleted = node.completedAt !== null;
-    div.className =
-      "node-tree-item" +
-      (selectedTreeNodeId === node.id ? " selected" : "") +
-      (isCompleted ? " completed" : "");
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "node-tree-item-name";
-    nameSpan.textContent = text;
-    div.appendChild(nameSpan);
-
-    const drillBtn = document.createElement("span");
-    drillBtn.className = "node-tree-drill";
-    drillBtn.textContent = "▶";
-    drillBtn.title = "子ノードを表示";
-    div.appendChild(drillBtn);
-
-    // Click name to select
-    nameSpan.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedTreeNodeId = node.id;
-      destNameInput.value = text;
-      nodeTree.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
-      div.classList.add("selected");
-    });
-
-    // Click drill button to navigate into children
-    drillBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedTreeNodeId = node.id;
-      destNameInput.value = text;
-      nodeTreePath.push({ id: node.id, name: text });
-      loadNodeTree(node.id);
-    });
-
-    nodeTree.appendChild(div);
-  }
+  return {
+    load,
+    reset,
+    get selectedId() {
+      return selectedId;
+    },
+    get pathNames() {
+      return path.map((c) => c.name);
+    },
+  };
 }
+
+// 設定「場所を追加」用: 選択で表示名の初期値と参照先パスも埋める
+const settingsNodeTree = createNodeTreePicker(nodeTree, {
+  onSelect: (sel) => {
+    selectedTreeNodeId = sel ? sel.id : null;
+    destNameInput.value = sel ? sel.name : "";
+    if (sel) {
+      const names = settingsNodeTree.pathNames;
+      const full = names[names.length - 1] === sel.name ? names : [...names, sel.name];
+      settingsTreeRefPath = full.join(" / ");
+    } else {
+      settingsTreeRefPath = "";
+    }
+  },
+});
+
+// compose 送信先セレクタ用
+const composeNodeTree = createNodeTreePicker(pickerNodeTree, {
+  onSelect: (sel) => {
+    if (sel) {
+      composeDest = { kind: "node", nodeId: sel.id, name: sel.name };
+      pickerCustomDay = false;
+      renderPicker();
+    }
+  },
+});
 
 // ==================== Toast ====================
 

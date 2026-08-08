@@ -1,0 +1,230 @@
+import { describe, it, expect } from "vitest";
+import {
+  defaultPlaces,
+  migratePlaces,
+  visiblePlaces,
+  toggleInView,
+  movePlace,
+  reorderPlaces,
+  ensureVisibleView,
+  stepView,
+  resolveBarStep,
+  dailyDateLabel,
+  dailyCounts,
+  itemTimeLabel,
+  splitNoteDraft,
+  composeDestForView,
+  dayPhrase,
+  destLabel,
+  destSendTarget,
+} from "../../public/scripts/views.js";
+import type { Place } from "../../public/scripts/views.js";
+
+const TODAY = "2026-08-08"; // Saturday
+
+function placesFixture(): Place[] {
+  return [
+    { id: "tasks", kind: "builtin", name: "Tasks", inView: true },
+    { id: "daily", kind: "daily", name: "Daily", inView: true },
+    { id: "p1", kind: "node", name: "記事クリップ", ref: "node-1", inView: true },
+    { id: "p2", kind: "node", name: "Inbox", ref: "node-2", inView: false },
+  ];
+}
+
+describe("migratePlaces", () => {
+  it("builds builtins only from empty legacy settings", () => {
+    const { places, lastDest } = migratePlaces({ destinations: [], selectedDestinationId: "" });
+    expect(places.map((p: { id: string }) => p.id)).toEqual(["tasks", "daily"]);
+    expect(lastDest).toBeNull();
+  });
+
+  it("converts legacy node destinations into registered places", () => {
+    const { places } = migratePlaces({
+      destinations: [
+        { id: "d1", type: "node", nodeId: "n1", name: "Work" },
+        { id: "d2", type: "calendar", name: "Daily Note" },
+      ],
+      selectedDestinationId: "",
+    });
+    expect(places).toHaveLength(3); // calendar destination is dropped (Daily builtin)
+    expect(places[2]).toMatchObject({ id: "d1", kind: "node", ref: "n1", inView: true });
+  });
+
+  it("preserves the selected destination as the compose default", () => {
+    const node = migratePlaces({
+      destinations: [{ id: "d1", type: "node", nodeId: "n1", name: "Work" }],
+      selectedDestinationId: "d1",
+    });
+    expect(node.lastDest).toEqual({ kind: "place", placeId: "d1" });
+
+    const calendar = migratePlaces({
+      destinations: [{ id: "d2", type: "calendar", name: "Daily Note" }],
+      selectedDestinationId: "d2",
+    });
+    expect(calendar.lastDest).toEqual({ kind: "daily", day: null });
+  });
+
+  it("returns stored places untouched when already migrated", () => {
+    const stored = placesFixture();
+    const { places } = migratePlaces({ places: stored, lastDest: null });
+    expect(places).toBe(stored);
+  });
+});
+
+describe("toggleInView", () => {
+  it("toggles a place's visibility", () => {
+    const next = toggleInView(placesFixture(), "p2");
+    expect(next!.find((p: { id: string }) => p.id === "p2")!.inView).toBe(true);
+  });
+
+  it("refuses to hide the last visible view", () => {
+    const places = defaultPlaces().map((p: Place) => ({
+      ...p,
+      inView: p.id === "tasks",
+    }));
+    expect(toggleInView(places, "tasks")).toBeNull();
+  });
+});
+
+describe("movePlace / reorderPlaces", () => {
+  it("moves a place by one step and clamps at the ends", () => {
+    const places = placesFixture();
+    expect(movePlace(places, "daily", -1).map((p: { id: string }) => p.id)).toEqual([
+      "daily",
+      "tasks",
+      "p1",
+      "p2",
+    ]);
+    expect(movePlace(places, "tasks", -1)).toBe(places);
+    expect(movePlace(places, "p2", 1)).toBe(places);
+  });
+
+  it("reorders to a full id list and appends ids missing from it", () => {
+    const places = placesFixture();
+    const next = reorderPlaces(places, ["p1", "tasks"]);
+    expect(next.map((p: { id: string }) => p.id)).toEqual(["p1", "tasks", "daily", "p2"]);
+  });
+});
+
+describe("view switching", () => {
+  it("visiblePlaces filters by inView in list order", () => {
+    expect(visiblePlaces(placesFixture()).map((p: { id: string }) => p.id)).toEqual([
+      "tasks",
+      "daily",
+      "p1",
+    ]);
+  });
+
+  it("ensureVisibleView falls back to the first visible view", () => {
+    expect(ensureVisibleView(placesFixture(), "daily")).toBe("daily");
+    expect(ensureVisibleView(placesFixture(), "p2")).toBe("tasks"); // hidden
+    expect(ensureVisibleView(placesFixture(), "gone")).toBe("tasks");
+  });
+
+  it("stepView moves to the neighbor and stays put at the ends", () => {
+    const places = placesFixture();
+    expect(stepView(places, "tasks", 1)).toBe("daily");
+    expect(stepView(places, "daily", -1)).toBe("tasks");
+    expect(stepView(places, "tasks", -1)).toBe("tasks");
+    expect(stepView(places, "p1", 1)).toBe("p1"); // p2 is hidden
+  });
+
+  it("resolveBarStep commits one step past ±44px", () => {
+    expect(resolveBarStep(-44)).toBe(1); // drag left => next view
+    expect(resolveBarStep(44)).toBe(-1); // drag right => previous view
+    expect(resolveBarStep(43)).toBe(0);
+    expect(resolveBarStep(-20)).toBe(0);
+  });
+});
+
+describe("Daily view helpers", () => {
+  it("formats the date heading", () => {
+    expect(dailyDateLabel("2026-08-08")).toBe("8/8 Sat");
+    expect(dailyDateLabel("2026-12-01")).toBe("12/1 Tue");
+  });
+
+  it("counts items and days for the header", () => {
+    const groups = [
+      { date: "2026-08-08", items: [{}, {}], hasMore: false },
+      { date: "2026-08-06", items: [{}], hasMore: false },
+    ];
+    expect(dailyCounts(groups)).toEqual({ items: 3, days: 2 });
+  });
+
+  it("formats the memo time column in local time", () => {
+    const ts = Math.floor(new Date(2026, 7, 8, 9, 12).getTime() / 1000);
+    expect(itemTimeLabel(ts)).toBe("09:12");
+  });
+});
+
+describe("splitNoteDraft", () => {
+  it("splits name and note at the first blank line", () => {
+    expect(splitNoteDraft("Title line\n\nbody line 1\nbody line 2")).toEqual({
+      name: "Title line",
+      note: "body line 1\nbody line 2",
+    });
+  });
+
+  it("keeps everything as the name when there is no blank line", () => {
+    expect(splitNoteDraft("just a note")).toEqual({ name: "just a note", note: null });
+  });
+
+  it("returns null for a blank draft", () => {
+    expect(splitNoteDraft("")).toBeNull();
+    expect(splitNoteDraft("  \n \n")).toBeNull();
+  });
+
+  it("handles a draft that starts with a blank line", () => {
+    expect(splitNoteDraft("\nbody")).toEqual({ name: "body", note: null });
+  });
+});
+
+describe("compose destination", () => {
+  it("defaults to the place backing the current view", () => {
+    const places = placesFixture();
+    expect(composeDestForView("daily", places, null)).toEqual({ kind: "daily", day: null });
+    expect(composeDestForView("p1", places, null)).toEqual({ kind: "place", placeId: "p1" });
+  });
+
+  it("keeps the last explicit choice on the Tasks view", () => {
+    const places = placesFixture();
+    const last = { kind: "place", placeId: "p1" } as const;
+    expect(composeDestForView("tasks", places, last)).toBe(last);
+    expect(composeDestForView("tasks", places, null)).toEqual({ kind: "daily", day: null });
+  });
+
+  it("phrases Daily days with the shared due-chip vocabulary", () => {
+    expect(dayPhrase(null, TODAY)).toBe("今日（08/08）");
+    expect(dayPhrase("2026-08-09", TODAY)).toBe("明日（08/09）");
+    expect(dayPhrase("2026-08-10", TODAY)).toBe("来週（08/10）"); // next Monday
+    expect(dayPhrase("2026-08-20", TODAY)).toBe("08/20");
+  });
+
+  it("labels destinations for the compose button", () => {
+    const places = placesFixture();
+    expect(destLabel({ kind: "daily", day: null }, places, TODAY)).toBe("Daily · 今日（08/08）");
+    expect(destLabel({ kind: "place", placeId: "p1" }, places, TODAY)).toBe("記事クリップ");
+    expect(destLabel({ kind: "node", nodeId: "n9", name: "資料" }, places, TODAY)).toBe("資料");
+  });
+
+  it("resolves destinations to send targets with explicit local dates", () => {
+    const places = placesFixture();
+    expect(destSendTarget({ kind: "daily", day: null }, places, TODAY)).toEqual({
+      targetType: "calendar",
+      day: TODAY,
+    });
+    expect(destSendTarget({ kind: "daily", day: "2026-08-15" }, places, TODAY)).toEqual({
+      targetType: "calendar",
+      day: "2026-08-15",
+    });
+    expect(destSendTarget({ kind: "place", placeId: "p1" }, places, TODAY)).toEqual({
+      targetType: "node",
+      parentId: "node-1",
+    });
+    expect(destSendTarget({ kind: "place", placeId: "gone" }, places, TODAY)).toBeNull();
+    expect(destSendTarget({ kind: "node", nodeId: "n9", name: "資料" }, places, TODAY)).toEqual({
+      targetType: "node",
+      parentId: "n9",
+    });
+  });
+});

@@ -51,6 +51,27 @@ export interface Task {
   completed: boolean;
 }
 
+// Item shown in the Daily / registered-node views. Tasks (layoutMode "todo")
+// and plain notes share this shape, distinguished by `todo`.
+export interface ViewItem {
+  id: string;
+  name: string; // raw name, including <time> markup
+  plainName: string; // display text with <time> markup stripped
+  note: string | null;
+  todo: boolean;
+  completed: boolean;
+  due: { date: string; time: string | null } | null;
+  createdAt: number;
+}
+
+// One day of daily notes in the Daily view. hasMore is set on the last group
+// of a page when older days likely exist below.
+export interface DailyGroup {
+  date: string; // YYYY-MM-DD
+  items: ViewItem[];
+  hasMore: boolean;
+}
+
 export interface WorkflowyNodesResponse {
   nodes: WorkflowyNode[];
 }

@@ -35,15 +35,22 @@ export const MainPage: FC = () => (
 
     <main id="task-list" class="task-list"></main>
 
-    <button id="btn-add-task" class="fab" title="新しいタスク">+</button>
+    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する */}
+    <nav id="viewbar" class="viewbar" aria-label="ビュー切り替え">
+      <div id="viewbar-track" class="viewbar-track" role="tablist"></div>
+    </nav>
+
+    <button id="btn-add-task" class="fab" title="新しく書き留める">+</button>
 
     {/* 詳細シート（行タップ） */}
     <div id="sheet-task" class="sheet hidden">
       <div class="sheet-backdrop" data-close-sheet="sheet-task"></div>
       <div class="sheet-panel">
         <div class="sheet-grabber"></div>
+        {/* メモのみ: 時刻 · 場所 */}
+        <div id="sheet-item-meta" class="sheet-item-meta hidden"></div>
         <div id="sheet-task-title" class="sheet-title"></div>
-        <div class="sheet-props">
+        <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
           <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
           <span class="sheet-prop-label">ノード</span>
@@ -75,14 +82,22 @@ export const MainPage: FC = () => (
             <button id="btn-sheet-save-note" class="chip-submit">保存</button>
           </div>
         </div>
+        {/* メモのみ: note を読むための面 */}
+        <div id="sheet-item-note" class="sheet-note-face hidden"></div>
         <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
           <span>Workflowy で開く</span>
           <span class="sheet-link-arrow">↗</span>
         </a>
         <div class="sheet-actions">
+          <button id="btn-sheet-delete" class="sheet-action sheet-action-delete" title="削除">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"></path>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
-          <button id="btn-snooze-week" class="sheet-action">来週へ</button>
-          <button id="btn-sheet-complete" class="sheet-action primary">完了</button>
+          <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
         </div>
       </div>
     </div>
@@ -92,8 +107,9 @@ export const MainPage: FC = () => (
       <div class="sheet-backdrop" data-close-sheet="sheet-delete"></div>
       <div class="sheet-panel">
         <div class="sheet-grabber"></div>
-        <div class="sheet-title">このタスクを削除しますか？</div>
+        <div class="sheet-title">削除しますか</div>
         <div id="sheet-delete-title" class="sheet-delete-target"></div>
+        <p class="sheet-delete-note">Workflowy 側のノードも削除されます。元に戻せません。</p>
         <div class="sheet-actions">
           <button id="btn-cancel-delete" class="sheet-action">キャンセル</button>
           <button id="btn-confirm-delete" class="sheet-action danger">削除</button>
@@ -101,21 +117,85 @@ export const MainPage: FC = () => (
       </div>
     </div>
 
-    {/* 追加シート（FAB） */}
+    {/* compose シート（FAB）。タスク / ノートの 2 モード + 送信先セレクタ */}
     <div id="sheet-add" class="sheet hidden">
       <div class="sheet-backdrop" data-close-sheet="sheet-add"></div>
       <div class="sheet-panel sheet-panel-add">
-        <input id="task-name-input" type="text" class="sheet-input" placeholder="新しいタスク" autocomplete="off" />
-        <div class="sheet-chip-row">
-          <button class="chip due-chip" data-due="today">今日</button>
-          <button class="chip due-chip" data-due="tomorrow">明日</button>
-          <button class="chip due-chip" data-due="week">来週</button>
-          <button class="chip due-chip" data-due="none">期限なし</button>
+        <div class="sheet-grabber"></div>
+
+        {/* 本体 */}
+        <div id="compose-main">
+          <div class="compose-modebar" id="compose-modebar">
+            <button class="tab" data-mode="task">タスク</button>
+            <button class="tab" data-mode="note">ノート</button>
+          </div>
+
+          {/* 書き込み先（タスクモードのみここに出す。ノートモードは下端ツールバーに畳む） */}
+          <div id="compose-dest-row" class="compose-dest-row">
+            <span class="compose-dest-label">書き込み先</span>
+            <button id="btn-compose-dest" class="compose-dest-btn">
+              <span id="compose-dest-icon" class="compose-dest-icon"></span>
+              <span id="compose-dest-name" class="compose-dest-name"></span>
+              <span class="compose-dest-chevron">▾</span>
+            </button>
+          </div>
+
+          {/* タスクモード */}
+          <div id="compose-task-body">
+            <input id="task-name-input" type="text" class="sheet-input" placeholder="新しいタスク" autocomplete="off" />
+            <div class="sheet-chip-row">
+              <span class="compose-due-label">期限</span>
+              <button class="chip due-chip" data-due="today">今日</button>
+              <button class="chip due-chip" data-due="tomorrow">明日</button>
+              <button class="chip due-chip" data-due="week">来週</button>
+              <button class="chip due-chip" data-due="none">期限なし</button>
+            </div>
+            <div class="sheet-custom-row">
+              <input id="task-date-input" type="date" class="sheet-input-small" />
+              <input id="task-time-input" type="time" class="sheet-input-small" />
+            </div>
+            <div class="compose-footer">
+              <span class="compose-footer-note">書き込み先の日付と、タスクの期限は別ものです。</span>
+              <button id="btn-save-task" class="compose-submit">追加</button>
+            </div>
+          </div>
+
+          {/* ノートモード: 書くことに専念させる枠のないテキストエリア */}
+          <div id="compose-note-body" class="hidden">
+            <textarea id="note-input" class="compose-textarea" placeholder="書き留める…"></textarea>
+            <div class="compose-note-toolbar">
+              <button id="btn-compose-dest-small" class="compose-dest-small">
+                <span id="compose-dest-small-icon" class="compose-dest-icon small"></span>
+                <span id="compose-dest-small-name" class="compose-dest-name"></span>
+              </button>
+              <span class="compose-note-hint">空行より下がノート</span>
+              <button id="btn-save-note" class="compose-submit">追加</button>
+            </div>
+          </div>
         </div>
-        <div class="sheet-custom-row">
-          <input id="task-date-input" type="date" class="sheet-input-small" />
-          <input id="task-time-input" type="time" class="sheet-input-small" />
-          <button id="btn-save-task" class="chip-submit">追加</button>
+
+        {/* 送信先セレクタ（シート内で本体と入れ替わる） */}
+        <div id="compose-picker" class="hidden">
+          <div class="compose-picker-header">
+            <span>書き込み先</span>
+            <button id="btn-picker-done" class="picker-done">完了</button>
+          </div>
+          <div class="compose-picker-scroll">
+            <div class="picker-section-label">Daily</div>
+            <div class="sheet-chip-row" id="picker-daily-chips">
+              <button class="chip picker-day" data-day="today">今日</button>
+              <button class="chip picker-day" data-day="tomorrow">明日</button>
+              <button class="chip picker-day" data-day="week">来週</button>
+              <button class="chip picker-day" data-day="custom">日付…</button>
+            </div>
+            <input id="picker-date-input" type="date" class="sheet-input-small picker-date hidden" />
+            <div class="picker-section-label">登録済みの場所</div>
+            <div id="picker-places" class="picker-places"></div>
+            <div class="picker-section-label">ノードを選ぶ</div>
+            <div id="picker-node-tree" class="node-tree">
+              <p class="tree-empty">読み込み中...</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -169,21 +249,15 @@ export const MainPage: FC = () => (
         </section>
 
         <section class="card">
-          <div class="card-title">保存先</div>
-          <div id="destination-list" class="destination-list"></div>
-          <button id="btn-add-destination" class="btn-dashed">＋ 保存先を追加</button>
+          <div class="card-row space-between">
+            <div class="card-title">場所</div>
+            <span id="place-count" class="place-count"></span>
+          </div>
+          <p class="card-desc">書き込み先とビューの並び順を管理します。眼のアイコンでビューへの表示を切り替えます。</p>
+          <div id="place-list" class="place-list"></div>
+          <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
 
           <div id="panel-add-destination" class="dest-panel hidden">
-            <div class="radio-group" id="dest-type-group">
-              <label>
-                <input type="radio" name="dest-type" value="node" checked />
-                ノード
-              </label>
-              <label>
-                <input type="radio" name="dest-type" value="calendar" />
-                カレンダー（Daily Note）
-              </label>
-            </div>
             <div id="node-tree" class="node-tree">
               <p class="tree-empty">読み込み中...</p>
             </div>

@@ -4,6 +4,7 @@ import { setCookie, getCookie } from "hono/cookie";
 import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
 import { extractTasks } from "./tasks";
+import { collectDailyHistory, toViewItem } from "./daily";
 import { setTimeMarkup, stripTimeMarkup } from "./time-markup";
 import { sendPush } from "./push";
 import {
@@ -89,14 +90,17 @@ api.get("/nodes", async (c) => {
   return c.json(nodes);
 });
 
-// Create a node. Used for adding a new todo item to a destination.
-// Workflowy creates the calendar day node on demand; "today" resolves
-// server-side, so no date handling is needed here.
+// Calendar targets accept a day key; Workflowy resolves them server-side and
+// creates day nodes on demand, so no date handling is needed here.
+const CALENDAR_DAY_RE = /^(today|tomorrow|next_week|\d{4}-\d{2}-\d{2})$/;
+
+// Create a node. Used for adding a new todo item or note to a destination.
 api.post("/send", async (c) => {
   const apiKey = await getApiKey(c as never);
   const body = await c.req.json<{
     targetType: "node" | "calendar";
     parentId?: string;
+    day?: string; // calendar only: "today" (default) | "tomorrow" | "next_week" | "YYYY-MM-DD"
     name: string;
     note?: string;
     layoutMode?: "todo";
@@ -104,7 +108,10 @@ api.post("/send", async (c) => {
 
   let parentId: string;
   if (body.targetType === "calendar") {
-    parentId = "today";
+    if (body.day !== undefined && !CALENDAR_DAY_RE.test(body.day)) {
+      return c.json({ error: "invalid day key" }, 400);
+    }
+    parentId = body.day || "today";
   } else if (body.targetType === "node") {
     if (!body.parentId) return c.json({ error: "parentId required" }, 400);
     parentId = body.parentId;
@@ -117,6 +124,39 @@ api.post("/send", async (c) => {
     ? await client.createNode(parentId, body.name, body.note, undefined, body.layoutMode)
     : await client.createNode(parentId, body.name, body.note);
   return c.json(result);
+});
+
+// Daily view: recent day groups of the native calendar, scanning backward
+// from local_date (initial load) or before_date (pagination).
+api.get("/daily", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const beforeDate = c.req.query("before_date");
+  const localDate = c.req.query("local_date");
+  const anchor = beforeDate || localDate;
+  if (!anchor || !/^\d{4}-\d{2}-\d{2}$/.test(anchor)) {
+    return c.json({ error: "local_date or before_date (YYYY-MM-DD) required" }, 400);
+  }
+
+  const client = new WorkflowyClient(apiKey);
+  const groups = await collectDailyHistory(client, { localDate, beforeDate });
+  return c.json(groups);
+});
+
+// Registered-node view: the node's children (one level, Workflowy order),
+// tasks and notes mixed, completed included.
+api.get("/nodes/:id/children", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const client = new WorkflowyClient(apiKey);
+  try {
+    const nodes = await client.getNodes(nodeId);
+    return c.json({ items: nodes.map(toViewItem) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // A registered node may have been deleted in Workflowy since.
+    if (/\b404\b/.test(message)) return c.json({ error: message }, 404);
+    throw err;
+  }
 });
 
 // Complete node

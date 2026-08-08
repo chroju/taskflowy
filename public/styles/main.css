@@ -1,22 +1,24 @@
 :root {
-  /* Catppuccin Macchiato (design_handoff_workflowy_tasks) */
-  --base: #24273a;          /* 地 */
-  --sheet: #363a4f;         /* シート面 */
-  --input-bg: #1e2030;      /* 入力面 */
-  --text: #cad3f5;          /* 本文・タイトル */
-  --subtext1: #a5adcb;      /* 二次テキスト・日付 */
-  --subtext0: #8087a2;      /* 補助テキスト */
-  --overlay0: #6e738d;      /* 完了テキスト・記号 */
-  --accent: #8aadf4;        /* アクセント（青） */
-  --accent-soft: #b7bdf8;   /* アクセント文字（薄） */
-  --maroon: #ee99a0;        /* 期限切れ */
+  /* Charcoal (design_handoff_taskflowy_views; supersedes Macchiato) */
+  --base: #22242a;          /* 地（行の背景も同じ） */
+  --sheet: #2c2f36;         /* シート面 */
+  --input-bg: #1b1d22;      /* 入力面・ビューバー */
+  --text: #e6e8ec;          /* 本文・タイトル */
+  --subtext1: #c3c8d0;      /* 二次テキスト・日付 */
+  --subtext0: #9aa0aa;      /* 補助テキスト */
+  --overlay0: #767c86;      /* 完了テキスト・記号 */
+  --accent: #e6e8ec;        /* アクセント（＝白の塗り。文字は地色を載せる） */
+  --accent-soft: #f2f4f7;   /* 淡い面の上のアクセント文字 */
+  --accent-dim: rgba(230, 232, 236, 0.13); /* 選択タブ・選択ビュー・TODOタグ */
+  --maroon: #e39098;        /* 期限切れ（唯一の有彩色） */
 
   --surface: rgba(255, 255, 255, 0.04);      /* カード地 */
-  --surface-tab: rgba(202, 211, 245, 0.06);  /* タブ地 */
-  --line: rgba(255, 255, 255, 0.14);         /* 罫線 */
-  --check-line: rgba(202, 211, 245, 0.26);   /* 未完了チェック枠 */
-  --overlay-bg: rgba(24, 25, 38, 0.72);      /* シート背景オーバーレイ */
-  --row-hover: #2a2e44;
+  --surface-tab: rgba(255, 255, 255, 0.06);  /* タブ地 */
+  --line: rgba(255, 255, 255, 0.14);         /* 罫線（枠線・区切り） */
+  --hairline: rgba(255, 255, 255, 0.08);     /* 行の下罫線 */
+  --check-line: rgba(230, 232, 236, 0.28);   /* 未完了チェック枠 */
+  --overlay-bg: rgba(12, 13, 16, 0.74);      /* シート背景オーバーレイ */
+  --row-hover: #2a2d34;
 
   --font-sans: Barlow, "Hiragino Sans", system-ui, sans-serif;
   --font-cond: "Barlow Condensed", "Hiragino Sans", system-ui, sans-serif;
@@ -117,7 +119,7 @@ button {
   height: 40px;
   border: 0;
   border-radius: 50%;
-  background: rgba(202, 211, 245, 0.1);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--accent-soft);
   cursor: pointer;
   display: flex;
@@ -127,7 +129,7 @@ button {
 }
 
 .btn-gear:hover {
-  background: rgba(138, 173, 244, 0.22);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .btn-close {
@@ -167,7 +169,7 @@ button {
 }
 
 .tab.active {
-  background: rgba(138, 173, 244, 0.18);
+  background: var(--accent-dim);
   color: var(--accent-soft);
 }
 
@@ -177,7 +179,8 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 130px;
+  /* FAB とビューバーの合計高さぶんの逃げ */
+  padding: 6px 0 150px;
 }
 
 .group-header {
@@ -201,13 +204,16 @@ button {
   color: var(--overlay0);
 }
 
+/* 行は面も影も持たず、下罫線（hairline）だけで切る。行間 0。 */
 .task-row-wrap {
   position: relative;
   overflow: hidden;
   margin: 0 14px;
-  border-radius: 14px;
+  border-bottom: 1px solid var(--hairline);
 }
 
+/* スワイプ中の背面: 行の背面いっぱいに色を敷き、しきい値の前後で濃さを変える。
+   方向クラス（swipe-right/left）と past-threshold は client.js が付ける。 */
 .task-row-underlay {
   position: absolute;
   inset: 0;
@@ -218,12 +224,41 @@ button {
   font: 500 13px/1 var(--font-sans);
 }
 
-.task-row-underlay .underlay-complete {
-  color: var(--accent);
+.task-row-underlay .underlay-complete,
+.task-row-underlay .underlay-delete {
+  color: transparent;
 }
 
-.task-row-underlay .underlay-delete {
+.task-row-wrap.swipe-right .task-row-underlay {
+  background: rgba(230, 232, 236, 0.2);
+}
+
+.task-row-wrap.swipe-right .underlay-complete {
+  color: var(--accent-soft);
+}
+
+.task-row-wrap.swipe-right.past-threshold .task-row-underlay {
+  background: var(--accent);
+}
+
+.task-row-wrap.swipe-right.past-threshold .underlay-complete {
+  color: var(--base);
+}
+
+.task-row-wrap.swipe-left .task-row-underlay {
+  background: rgba(227, 144, 152, 0.22);
+}
+
+.task-row-wrap.swipe-left .underlay-delete {
   color: var(--maroon);
+}
+
+.task-row-wrap.swipe-left.past-threshold .task-row-underlay {
+  background: var(--maroon);
+}
+
+.task-row-wrap.swipe-left.past-threshold .underlay-delete {
+  color: var(--base);
 }
 
 .task-row {
@@ -232,7 +267,6 @@ button {
   gap: 15px;
   align-items: flex-start;
   padding: 13px 12px;
-  border-radius: 14px;
   background: var(--base);
   touch-action: pan-y;
   cursor: pointer;
@@ -335,7 +369,7 @@ button {
   padding: 7px 14px;
   border: 0;
   border-radius: 999px;
-  background: rgba(202, 211, 245, 0.1);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--subtext0);
   font: 500 12.5px/1 var(--font-sans);
   cursor: pointer;
@@ -343,12 +377,12 @@ button {
 }
 
 .node-filter:hover {
-  background: rgba(202, 211, 245, 0.18);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .node-filter.active {
-  background: rgba(138, 173, 244, 0.22);
-  color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-soft);
 }
 
 .node-list {
@@ -408,20 +442,204 @@ button {
 
 /* ---- FAB ---- */
 
+/* FAB は塗らない: 地色の面に枠線、ビューバー(z-index 20)より上 */
 .fab {
   position: absolute;
   right: 24px;
-  bottom: calc(36px + env(safe-area-inset-bottom));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   width: 58px;
   height: 58px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--base);
+  border: 1px solid rgba(230, 232, 236, 0.42);
+  border-radius: 16px;
+  background: var(--base);
+  color: var(--accent);
   font: 400 30px/1 var(--font-sans);
   cursor: pointer;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
-  z-index: 40;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  z-index: 25;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.fab:hover {
+  background: var(--row-hover);
+  border-color: rgba(230, 232, 236, 0.7);
+}
+
+/* ---- View bar ---- */
+
+.viewbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 9px 0 calc(16px + env(safe-area-inset-bottom));
+  background: var(--input-bg);
+  border-top: 1px solid var(--hairline);
+  /* バー上の水平ドラッグはビュー切り替えとして自前で扱う */
+  touch-action: none;
+}
+
+.viewbar-track {
+  display: flex;
+  gap: 4px;
+  padding: 0 14px 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.viewbar-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* 行末スペーサー: 最後のピルが FAB の下に潜らないように */
+.viewbar-track::after {
+  content: "";
+  flex: none;
+  width: 62px;
+}
+
+.view-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--subtext0);
+  font: 500 14px/1 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.view-pill:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.view-pill.active {
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.view-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(230, 232, 236, 0.2);
+}
+
+.view-pill.active .view-dot {
+  background: var(--accent);
+}
+
+/* ビュー切り替えは横スライドではなくクロスフェード（バー上のスワイプと
+   本文のスワイプを別物に見せる） */
+.task-list.view-fade {
+  animation: view-fade 0.2s ease;
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Daily / registered-node views ---- */
+
+.group-header.date .group-label {
+  font: 600 14px/1.35 var(--font-mono);
+  color: var(--subtext1);
+}
+
+.group-header.date.today .group-label {
+  color: var(--accent-soft);
+}
+
+/* メモ行: チェックボックスを持たず、時刻の左カラム（Daily のみ）と本文 */
+.memo-time {
+  flex: none;
+  width: 38px;
+  padding-top: 3px;
+  font: 500 12.5px/1 var(--font-mono);
+  color: var(--subtext0);
+}
+
+.memo-name {
+  font: 400 16px/1.55 var(--font-sans);
+  color: var(--text);
+  text-wrap: pretty;
+  word-break: break-word;
+}
+
+.memo-note {
+  margin-top: 6px;
+  font: 400 14px/1.65 var(--font-sans);
+  color: var(--subtext1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-row.done .memo-name,
+.task-row.done .memo-note {
+  color: var(--overlay0);
+  text-decoration: line-through;
+}
+
+/* タスクであることは本文の下のタグだけで示す（登録ノード/Daily ビュー） */
+.item-tag-row {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-tag {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  font: 500 10.5px/1 var(--font-sans);
+  letter-spacing: 0.06em;
+  background: rgba(230, 232, 236, 0.14);
+  color: var(--accent-soft);
+  cursor: pointer;
+}
+
+.item-tag.done {
+  background: rgba(230, 232, 236, 0.1);
+  color: var(--overlay0);
+}
+
+.item-tag-due {
+  font: 500 12.5px/1 var(--font-mono);
+  color: var(--subtext1);
+}
+
+.item-tag-due.overdue {
+  color: var(--maroon);
+}
+
+/* 過去のデイリーノートを読み込む（自動読み込みのフォールバック兼ローディング） */
+.daily-more {
+  display: block;
+  margin: 18px auto 0;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--subtext0);
+  font: 500 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.daily-more:hover {
+  color: var(--accent-soft);
 }
 
 /* ---- Bottom sheets ---- */
@@ -478,6 +696,30 @@ button {
   text-wrap: pretty;
 }
 
+/* メモの詳細シート: 読むための画面（時刻 · 場所 / 大きめタイトル / note 面） */
+.sheet-item-meta {
+  margin-bottom: 8px;
+  font: 400 12.5px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.sheet-title.memo {
+  font: 400 21px/1.5 var(--font-sans);
+}
+
+.sheet-note-face {
+  margin-top: 14px;
+  padding: 15px 16px;
+  border-radius: 12px;
+  background: var(--base);
+  font: 400 16px/1.85 var(--font-sans);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 .sheet-props {
   display: grid;
   grid-template-columns: 96px 1fr;
@@ -507,7 +749,7 @@ button.sheet-prop-value {
 }
 
 .sheet-prop-edit {
-  text-decoration: underline dotted rgba(202, 211, 245, 0.35);
+  text-decoration: underline dotted rgba(230, 232, 236, 0.35);
   text-underline-offset: 3px;
 }
 
@@ -536,7 +778,7 @@ button.sheet-prop-value {
   margin-top: 18px;
   padding: 13px 15px;
   border-radius: 12px;
-  background: rgba(138, 173, 244, 0.12);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--accent-soft);
   font: 500 14px/1 var(--font-sans);
   text-decoration: none;
@@ -544,7 +786,7 @@ button.sheet-prop-value {
 }
 
 .sheet-link:hover {
-  background: rgba(138, 173, 244, 0.2);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .sheet-link-arrow {
@@ -584,9 +826,30 @@ button.sheet-prop-value {
 
 .sheet-delete-target {
   margin-top: 12px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: var(--base);
   font: 400 15px/1.5 var(--font-sans);
   color: var(--subtext1);
   text-wrap: pretty;
+  word-break: break-word;
+}
+
+.sheet-delete-note {
+  margin-top: 12px;
+  font: 400 12.5px/1.5 var(--font-sans);
+  color: var(--subtext0);
+}
+
+/* 詳細シートの削除アイコンボタン（左端・固定幅）。完了トグルは client.js が
+   primary クラスを付け外しする（未完了時は塗り、完了時は枠線） */
+.sheet-action-delete {
+  flex: none;
+  width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--maroon);
 }
 
 .sheet-action:disabled {
@@ -677,6 +940,250 @@ button.sheet-prop-value {
   border-color: var(--accent);
 }
 
+/* ---- Compose sheet ---- */
+
+.compose-modebar {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-tab);
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+
+.compose-dest-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.compose-dest-label {
+  flex: none;
+  width: 76px;
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-dest-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--base);
+  color: var(--text);
+  font: 400 14px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.compose-dest-icon {
+  flex: none;
+  display: flex;
+  color: var(--accent-soft);
+}
+
+.compose-dest-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-dest-chevron {
+  margin-left: auto;
+  color: var(--subtext0);
+  font-size: 11px;
+}
+
+.compose-due-label {
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+  margin-right: 2px;
+}
+
+.compose-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.compose-footer-note {
+  flex: 1;
+  font: 400 12.5px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-submit {
+  flex: none;
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--base);
+  font: 600 14px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.compose-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.compose-textarea {
+  width: 100%;
+  min-height: 252px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 400 17px/1.7 var(--font-sans);
+  outline: none;
+  resize: none;
+}
+
+.compose-textarea::placeholder {
+  color: var(--subtext0);
+}
+
+.compose-note-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.compose-dest-small {
+  flex: none;
+  max-width: 45%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--subtext1);
+  font: 500 12.5px/1.2 var(--font-sans);
+  cursor: pointer;
+}
+
+.compose-dest-small .compose-dest-icon {
+  color: var(--subtext1);
+}
+
+.compose-note-hint {
+  flex: 1;
+  font: 400 11.5px/1.3 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-note-toolbar .compose-submit {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+
+/* ---- Compose: 送信先セレクタ ---- */
+
+.compose-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 500 14px/1 var(--font-sans);
+  color: var(--text);
+}
+
+.picker-done {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 14px/1 var(--font-sans);
+  cursor: pointer;
+  padding: 6px 0 6px 12px;
+}
+
+.compose-picker-scroll {
+  max-height: 430px;
+  overflow-y: auto;
+}
+
+.picker-section-label {
+  margin: 16px 0 8px;
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.picker-day {
+  padding: 10px 15px;
+}
+
+.picker-date {
+  margin-top: 10px;
+  flex: none;
+  width: 100%;
+}
+
+.picker-places {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.picker-place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: 400 15px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-place:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.picker-place.selected {
+  border-color: rgba(230, 232, 236, 0.5);
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.picker-place .compose-dest-icon {
+  color: var(--subtext1);
+}
+
+.picker-place.selected .compose-dest-icon {
+  color: var(--accent-soft);
+}
+
+.picker-place-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-check {
+  margin-left: auto;
+  color: var(--accent-soft);
+}
+
+.picker-empty {
+  font: 400 13px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
 /* ---- Chips / pills ---- */
 
 .chip {
@@ -695,8 +1202,8 @@ button.sheet-prop-value {
 }
 
 .chip.active {
-  background: rgba(138, 173, 244, 0.18);
-  border-color: rgba(138, 173, 244, 0.7);
+  background: var(--accent-dim);
+  border-color: rgba(230, 232, 236, 0.5);
   color: var(--accent-soft);
 }
 
@@ -718,7 +1225,7 @@ button.sheet-prop-value {
 
 .pill {
   padding: 8px 14px;
-  border: 1px solid rgba(138, 173, 244, 0.55);
+  border: 1px solid rgba(230, 232, 236, 0.5);
   border-radius: 999px;
   background: transparent;
   color: var(--accent-soft);
@@ -891,62 +1398,125 @@ button.sheet-prop-value {
   cursor: pointer;
 }
 
-/* ---- Destinations ---- */
+/* ---- Settings 場所カード ---- */
 
-.destination-list {
+.place-count {
+  font: 400 12px/1 var(--font-mono);
+  color: var(--overlay0);
+}
+
+.place-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 12px;
 }
 
-.destination-empty {
-  font: 400 14px/1 var(--font-sans);
-  color: var(--subtext0);
-}
-
-.destination-item {
+.place-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
-  border: 1px solid transparent;
+  padding: 12px;
   border-radius: 12px;
-  background: var(--input-bg);
-  cursor: pointer;
+  background: var(--surface);
 }
 
-.destination-item.active {
-  border-color: rgba(138, 173, 244, 0.55);
+.place-row.dragging {
+  background: var(--accent-dim);
 }
 
-.destination-item-name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: 400 14px/1.35 var(--font-sans);
-  color: var(--text);
-  overflow: hidden;
+.place-row.dragging .place-grip {
+  color: var(--accent-soft);
 }
 
-.dest-type-icon {
-  flex-shrink: 0;
+.place-list.reordering .place-row:not(.dragging) {
   opacity: 0.7;
 }
 
-.destination-item-delete {
+.place-grip {
   flex: none;
+  width: 24px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: var(--subtext0);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 2px 4px;
+  color: var(--overlay0);
+  cursor: grab;
+  touch-action: none;
 }
 
-.destination-item-delete:hover {
+.place-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.place-name {
+  font: 400 15px/1.3 var(--font-sans);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-badge {
+  margin-left: 6px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(230, 232, 236, 0.1);
+  font: 500 10.5px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  color: var(--subtext0);
+}
+
+.place-ref {
+  margin-top: 2px;
+  font: 400 12px/1.3 var(--font-sans);
+  color: var(--subtext0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-eye {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(230, 232, 236, 0.14);
+  color: var(--accent-soft);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.place-eye.off {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--subtext0);
+}
+
+.place-delete {
+  flex: none;
+  width: 30px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--subtext0);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.place-delete:hover {
+  background: rgba(227, 144, 152, 0.16);
   color: var(--maroon);
 }
 
@@ -957,24 +1527,6 @@ button.sheet-prop-value {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.radio-group {
-  display: flex;
-  gap: 16px;
-  font: 400 13.5px/1 var(--font-sans);
-  color: var(--subtext1);
-}
-
-.radio-group label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.radio-group input[type="radio"] {
-  accent-color: var(--accent);
 }
 
 .input-group {
@@ -1035,7 +1587,7 @@ button.sheet-prop-value {
 }
 
 .node-tree-item.selected {
-  background: rgba(138, 173, 244, 0.18);
+  background: var(--accent-dim);
   color: var(--accent-soft);
 }
 
@@ -1065,7 +1617,7 @@ button.sheet-prop-value {
 
 .node-tree-drill:hover {
   color: var(--accent);
-  background: rgba(138, 173, 244, 0.15);
+  background: rgba(230, 232, 236, 0.15);
 }
 
 /* ---- Toast ---- */

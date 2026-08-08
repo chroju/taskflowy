@@ -38,6 +38,19 @@ export function dailyDateLabel(dateStr: string): string;
 export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: number };
 export function itemTimeLabel(createdAt: number): string;
 
+export interface UiLayerFlags {
+  deleteOpen: boolean;
+  pickerOpen: boolean;
+  detailOpen: boolean;
+  composeOpen: boolean;
+  settingsOpen: boolean;
+  drilldown: boolean;
+}
+
+export function topUiLayer(
+  flags: UiLayerFlags
+): "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
+
 export interface ViewItemLike {
   todo?: boolean;
   completed?: boolean;

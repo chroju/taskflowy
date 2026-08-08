@@ -143,6 +143,22 @@ export function itemTimeLabel(createdAt) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// ---- Back-button layers ----
+
+// Which open UI layer the back gesture should close first. Sheets stack over
+// screens: delete confirmation > compose's destination picker > detail
+// sheet > compose sheet > settings > node drilldown. Returns null when
+// nothing is open, i.e. back may leave the app.
+export function topUiLayer({ deleteOpen, pickerOpen, detailOpen, composeOpen, settingsOpen, drilldown }) {
+  if (deleteOpen) return "delete";
+  if (pickerOpen) return "picker";
+  if (detailOpen) return "detail";
+  if (composeOpen) return "compose";
+  if (settingsOpen) return "settings";
+  if (drilldown) return "drilldown";
+  return null;
+}
+
 // ---- Completed-task filtering (Daily / registered-node views) ----
 
 // Hides completed todos unless showCompleted. Memos (non-todo items) are

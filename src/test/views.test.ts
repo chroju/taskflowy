@@ -13,6 +13,7 @@ import {
   dailyCounts,
   itemTimeLabel,
   splitNoteDraft,
+  topUiLayer,
   filterCompletedItems,
   visibleDailyGroups,
   composeDestForView,
@@ -158,6 +159,39 @@ describe("Daily view helpers", () => {
   it("formats the memo time column in local time", () => {
     const ts = Math.floor(new Date(2026, 7, 8, 9, 12).getTime() / 1000);
     expect(itemTimeLabel(ts)).toBe("09:12");
+  });
+});
+
+describe("topUiLayer", () => {
+  const none = {
+    deleteOpen: false,
+    pickerOpen: false,
+    detailOpen: false,
+    composeOpen: false,
+    settingsOpen: false,
+    drilldown: false,
+  };
+
+  it("returns null when nothing is open (back may leave the app)", () => {
+    expect(topUiLayer(none)).toBeNull();
+  });
+
+  it("closes the delete confirmation before anything else", () => {
+    expect(topUiLayer({ ...none, deleteOpen: true, detailOpen: true, drilldown: true })).toBe("delete");
+  });
+
+  it("closes the destination picker before the compose sheet", () => {
+    expect(topUiLayer({ ...none, pickerOpen: true, composeOpen: true })).toBe("picker");
+    expect(topUiLayer({ ...none, composeOpen: true })).toBe("compose");
+  });
+
+  it("closes an open sheet before leaving a drilldown", () => {
+    expect(topUiLayer({ ...none, detailOpen: true, drilldown: true })).toBe("detail");
+    expect(topUiLayer({ ...none, drilldown: true })).toBe("drilldown");
+  });
+
+  it("closes the settings screen", () => {
+    expect(topUiLayer({ ...none, settingsOpen: true })).toBe("settings");
   });
 });
 

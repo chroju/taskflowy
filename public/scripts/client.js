@@ -32,6 +32,7 @@ import {
   filterCompletedItems,
   visibleDailyGroups,
   composeDestForView,
+  topUiLayer,
   initialComposeMode,
   normalizePosition,
   destLabel,
@@ -179,6 +180,7 @@ async function init() {
   nodeViews = loadNodeViewsCache();
   bindEvents();
   bindSettingsEvents();
+  bindBackButton();
   setupMobileViewport();
   registerServiceWorker();
   await checkAuth();
@@ -415,6 +417,7 @@ function switchView(next) {
   render();
   loadCurrentView();
   scrollActivePillIntoView();
+  syncHistoryArm(); // ドリルダウン中にビューを切り替えたときの番兵回収
 }
 
 function scrollActivePillIntoView() {
@@ -784,6 +787,7 @@ function renderNodeList() {
     row.addEventListener("click", () => {
       selectedNodeKey = node.key;
       render();
+      armHistory();
     });
     container.appendChild(row);
   }
@@ -1209,6 +1213,7 @@ function openSheetFor(entity, origin) {
   sheetDueEditor.classList.add("hidden");
   sheetNoteEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
+  armHistory();
 }
 
 function toggleDueEditor() {
@@ -1269,12 +1274,71 @@ async function saveSheetNote() {
   }
 }
 
-function closeSheets() {
-  sheetTaskEl.classList.add("hidden");
-  sheetAddEl.classList.add("hidden");
-  sheetDeleteEl.classList.add("hidden");
-  sheetTask = null;
-  pendingDelete = null;
+// ==================== 戻るボタン統合 ====================
+//
+// シート/設定/ドリルダウンを開くとき番兵の履歴エントリを 1 つ積み、
+// popstate（戻るボタン）で最前面のレイヤーを 1 つだけ閉じる。レイヤーが
+// まだ残っていれば積み直す。UI 上の閉じる操作は history.back() に流して
+// 履歴と画面の状態を同期させる。何も開いていないときの戻るはアプリを出る。
+
+let historyArmed = false;
+
+function uiLayerFlags() {
+  const composeOpen = !sheetAddEl.classList.contains("hidden");
+  return {
+    deleteOpen: !sheetDeleteEl.classList.contains("hidden"),
+    pickerOpen: composeOpen && !composePicker.classList.contains("hidden"),
+    detailOpen: !sheetTaskEl.classList.contains("hidden"),
+    composeOpen,
+    settingsOpen: !screenSettings.classList.contains("hidden"),
+    drilldown: view === "tasks" && tab === "nodes" && !!selectedNodeKey,
+  };
+}
+
+function armHistory() {
+  if (historyArmed) return;
+  historyArmed = true;
+  history.pushState({ taskflowy: true }, "");
+}
+
+function closeTopLayer() {
+  const layer = topUiLayer(uiLayerFlags());
+  if (layer === "delete") {
+    sheetDeleteEl.classList.add("hidden");
+    pendingDelete = null;
+  } else if (layer === "picker") {
+    closePicker();
+  } else if (layer === "detail") {
+    sheetTaskEl.classList.add("hidden");
+    sheetTask = null;
+  } else if (layer === "compose") {
+    sheetAddEl.classList.add("hidden");
+  } else if (layer === "settings") {
+    screenSettings.classList.add("hidden");
+  } else if (layer === "drilldown") {
+    selectedNodeKey = null;
+    render();
+  }
+  return layer !== null;
+}
+
+// UI の閉じるボタン/背景タップ: 戻るボタンと同じ経路で最前面を閉じる
+function closeViaBack() {
+  if (historyArmed) history.back();
+  else closeTopLayer();
+}
+
+// history を介さずレイヤーを閉じたあと、何も残っていなければ番兵を回収する
+function syncHistoryArm() {
+  if (historyArmed && !topUiLayer(uiLayerFlags())) history.back();
+}
+
+function bindBackButton() {
+  window.addEventListener("popstate", () => {
+    if (!historyArmed) return; // 番兵より前の履歴操作（こちらでは何も開いていない）
+    historyArmed = false;
+    if (closeTopLayer() && topUiLayer(uiLayerFlags())) armHistory();
+  });
 }
 
 // ==================== Delete confirmation ====================
@@ -1283,6 +1347,7 @@ function openDeleteConfirm(title, run) {
   pendingDelete = { run };
   sheetDeleteTitle.textContent = title;
   sheetDeleteEl.classList.remove("hidden");
+  armHistory();
 }
 
 function confirmDelete() {
@@ -1290,6 +1355,7 @@ function confirmDelete() {
   const { run } = pendingDelete;
   pendingDelete = null;
   sheetDeleteEl.classList.add("hidden");
+  syncHistoryArm();
   run();
 }
 
@@ -1328,6 +1394,7 @@ function openAddSheet() {
   renderCompose();
   resetComposeInputs();
   sheetAddEl.classList.remove("hidden");
+  armHistory();
   (composeMode === "task" ? taskNameInput : noteInput).focus();
 }
 
@@ -1372,6 +1439,7 @@ function resolveAddDue() {
 function openPicker() {
   composeMain.classList.add("hidden");
   composePicker.classList.remove("hidden");
+  armHistory();
   if (!composeTreeLoaded) {
     composeTreeLoaded = true;
     composeNodeTree.load();
@@ -1501,7 +1569,7 @@ function afterComposeSend(dest, { id, name, note, todo, due }) {
 async function handleAddTask() {
   const name = taskNameInput.value.trim();
   if (!name) {
-    closeSheets();
+    closeViaBack(); // 空のまま追加 = 連続追加の終了
     return;
   }
   const dest = composeDest;
@@ -1546,7 +1614,7 @@ async function handleAddTask() {
 async function handleSendNote() {
   const draft = splitNoteDraft(noteInput.value);
   if (!draft) {
-    closeSheets();
+    closeViaBack(); // 空のまま追加 = 連続追加の終了
     return;
   }
   const dest = composeDest;
@@ -1589,21 +1657,19 @@ function bindEvents() {
       tab = btn.dataset.tab;
       selectedNodeKey = null;
       render();
+      syncHistoryArm(); // ドリルダウンをタブ切り替えで抜けたら番兵を回収
     });
   });
 
-  btnBack.addEventListener("click", () => {
-    selectedNodeKey = null;
-    render();
-  });
+  btnBack.addEventListener("click", closeViaBack);
 
   btnSettings.addEventListener("click", openSettings);
-  btnCloseSettings.addEventListener("click", closeSettings);
+  btnCloseSettings.addEventListener("click", closeViaBack);
 
   btnAddTask.addEventListener("click", openAddSheet);
 
   document.querySelectorAll("[data-close-sheet]").forEach((el) => {
-    el.addEventListener("click", closeSheets);
+    el.addEventListener("click", closeViaBack);
   });
 
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
@@ -1698,14 +1764,14 @@ function bindEvents() {
   btnSheetCancelNote.addEventListener("click", () => sheetNoteEditor.classList.add("hidden"));
 
   btnConfirmDelete.addEventListener("click", confirmDelete);
-  btnCancelDelete.addEventListener("click", closeSheets);
+  btnCancelDelete.addEventListener("click", closeViaBack);
 
   btnSheetComplete.addEventListener("click", () => {
     if (!sheetTask) return;
     const row = findRow(sheetTask.id);
     if (sheetOrigin === "tasks") toggleComplete(sheetTask, row);
     else toggleItemComplete(sheetTask, row, sheetOrigin);
-    closeSheets();
+    closeViaBack();
   });
 
   btnSheetDelete.addEventListener("click", () => {
@@ -1749,7 +1815,7 @@ async function snoozeSheetTask(option) {
   if (!due) return;
   const entity = sheetTask;
   const origin = sheetOrigin;
-  closeSheets();
+  closeViaBack();
   try {
     await scheduleEntity(entity, due.date, undefined, origin);
     showToast(option === "tomorrow" ? "明日に設定しました" : "来週に設定しました");
@@ -1767,10 +1833,7 @@ function openSettings() {
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
-}
-
-function closeSettings() {
-  screenSettings.classList.add("hidden");
+  armHistory();
 }
 
 function updateApiKeyUI() {

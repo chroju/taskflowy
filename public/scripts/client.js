@@ -10,6 +10,8 @@ import {
   formatSyncAgo,
   classifyDue,
   groupTasksForView,
+  completedTasksForDueView,
+  countCompletedForView,
   summarizeNodes,
   filterFinishedNodes,
   groupNodeTasks,
@@ -56,6 +58,9 @@ let view = "tasks"; // 'tasks' | 'daily' | <place id>; restored in init()
 let tab = "today"; // Tasks ビュー内: 'today' | 'due' | 'nodes'
 let selectedNodeKey = null; // Nodes drilldown; cleared on tab switch
 let tasksState = []; // includes completed todos (for node progress)
+// Deadlines の完了グループ: 表示済みの 7 日ウィンドウ数と、その先の有無
+let dueCompletedPages = 1;
+let dueDoneHasMore = false;
 let lastSyncMs = null;
 let sheetTask = null; // task/item shown in the detail sheet
 let sheetOrigin = "tasks"; // どのビューの行か: 'tasks' | 'daily' | <place id>
@@ -719,14 +724,14 @@ function renderList(node) {
   const showCompleted = showCompletedFor(settings.showCompletedTasks, scope);
   const groups = node
     ? groupNodeTasks(node.tasks, showCompleted)
-    : groupTasksForView(tasksState, tab, today, showCompleted);
+    : groupTasksForView(tasksState, tab, today, showCompleted, dueCompletedPages);
+  dueDoneHasMore =
+    !node && tab === "due" && showCompleted && !!groups.find((g) => g.key === "done")?.hasMore;
   const openCount = groups.reduce((n, g) => n + g.tasks.filter((t) => !t.completed).length, 0);
   screenCount.textContent = `${openCount} 件`;
 
   // このビューに属する完了済みタスクの数（非表示中でもボタンの件数に出す）
-  const completedCount = node
-    ? node.done
-    : (groupTasksForView(tasksState, tab, today, true).find((g) => g.key === "done")?.tasks.length ?? 0);
+  const completedCount = node ? node.done : countCompletedForView(tasksState, tab, today);
   if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, scope));
 
   if (!groups.length) {
@@ -749,6 +754,29 @@ function renderList(node) {
       taskList.appendChild(buildTaskRow(task, { showParent: !node }));
     }
   }
+
+  // 完了グループがリスト下端に届いていなければ画面が埋まるまで自動で追い読み
+  // （以降はスクロール下端で 7 日分ずつ。Daily と同じ形）
+  if (dueDoneHasMore && taskList.scrollHeight <= taskList.clientHeight) {
+    setTimeout(loadMoreCompletedDue, 0);
+  }
+}
+
+// Deadlines 完了グループの追い読み。次の 7 日ウィンドウへ広げる。完了が
+// 1 件も無い週はスキップして、必ず表示件数が増えるところまで進める。
+function loadMoreCompletedDue() {
+  if (!dueDoneHasMore || view !== "tasks" || tab !== "due") return;
+  const today = localDateString();
+  const current = completedTasksForDueView(tasksState, today, dueCompletedPages);
+  if (!current.hasMore) return;
+  let pages = dueCompletedPages;
+  let next;
+  do {
+    pages += 1;
+    next = completedTasksForDueView(tasksState, today, pages);
+  } while (next.hasMore && next.tasks.length === current.tasks.length);
+  dueCompletedPages = pages;
+  render();
 }
 
 function renderNodeList() {
@@ -1800,12 +1828,13 @@ function bindEvents() {
 
   bindViewBarSwipe();
 
-  // Daily の無限スクロール（下端付近で過去分を自動読み込み）
+  // 無限スクロール（下端付近で自動読み込み）: Daily の過去分と
+  // Deadlines 完了グループの続き
   taskList.addEventListener("scroll", () => {
-    if (view !== "daily" || !dailyHasMore || dailyLoading) return;
-    if (taskList.scrollTop + taskList.clientHeight >= taskList.scrollHeight - 200) {
-      loadDailyMore();
-    }
+    const nearBottom = taskList.scrollTop + taskList.clientHeight >= taskList.scrollHeight - 200;
+    if (!nearBottom) return;
+    if (view === "daily" && dailyHasMore && !dailyLoading) loadDailyMore();
+    else if (dueDoneHasMore) loadMoreCompletedDue();
   });
 
   // Re-fetch when the app returns to the foreground, so edits made in

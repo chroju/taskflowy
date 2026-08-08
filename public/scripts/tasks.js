@@ -140,21 +140,68 @@ const VIEW_SECTIONS = {
   due: ["overdue", "today", "tomorrow", "thisWeek", "later", "noDue"],
 };
 
+// Local YYYY-MM-DD a task was completed on: completedAt (Unix seconds) when
+// present, else its due date, else null.
+export function completedDateOf(task) {
+  if (task.completedAt) return localDateString(new Date(task.completedAt * 1000));
+  return task.due ? task.due.date : null;
+}
+
+// Newest completion first; unknown dates last.
+function compareCompletedDesc(a, b) {
+  const da = completedDateOf(a) || "";
+  const db = completedDateOf(b) || "";
+  if (da !== db) return da < db ? 1 : -1;
+  return (b.completedAt || 0) - (a.completedAt || 0);
+}
+
+// Today's 完了 = due today, or completed today (an overdue task knocked out
+// today counts as today's accomplishment).
+function isCompletedForToday(task, todayStr) {
+  if (!task.completed) return false;
+  return (task.due && task.due.date === todayStr) || completedDateOf(task) === todayStr;
+}
+
+// Completed tasks for the Deadlines 完了 group: newest completion first,
+// windowed to `pages` × 7 days back from today (Daily-style paging; the
+// client extends `pages` on scroll). Tasks with no known date appear only
+// after every dated one is visible. hasMore = older tasks remain cut off.
+export function completedTasksForDueView(tasks, todayStr, pages = 1) {
+  const completed = tasks.filter((t) => t.completed).sort(compareCompletedDesc);
+  const start = addDays(todayStr, -(7 * pages - 1));
+  const dated = completed.filter((t) => completedDateOf(t) !== null);
+  const within = dated.filter((t) => completedDateOf(t) >= start);
+  const visible = within.length === dated.length ? completed : within;
+  return { tasks: visible, hasMore: visible.length < completed.length };
+}
+
+// Count for the toggle button: how many completed tasks the view would show
+// when fully expanded.
+export function countCompletedForView(tasks, view, todayStr = localDateString()) {
+  if (view === "today") return tasks.filter((t) => isCompletedForToday(t, todayStr)).length;
+  return tasks.filter((t) => t.completed).length;
+}
+
 // Groups tasks for the Today / Deadlines views, returning an ordered array
 // of { key, label, overdue, tasks }. Empty sections are omitted. The Today
 // view shows overdue and today only. Completed tasks are excluded unless
-// showCompleted, in which case those belonging to the view's sections form
-// a trailing 完了 group.
-export function groupTasksForView(tasks, view, todayStr = localDateString(), showCompleted = false) {
+// showCompleted, in which case a trailing 完了 group holds them: Today =
+// due today or completed today; Deadlines = all, windowed by completedPages
+// (see completedTasksForDueView; the group carries hasMore).
+export function groupTasksForView(
+  tasks,
+  view,
+  todayStr = localDateString(),
+  showCompleted = false,
+  completedPages = 1
+) {
   const sections = VIEW_SECTIONS[view] || VIEW_SECTIONS.due;
   const buckets = {};
-  const done = [];
   for (const key of sections) buckets[key] = [];
   for (const task of tasks) {
+    if (task.completed) continue;
     const key = classifyDue(task.due, todayStr);
-    if (!buckets[key]) continue; // outside this view's sections
-    if (task.completed) done.push(task);
-    else buckets[key].push(task);
+    if (buckets[key]) buckets[key].push(task);
   }
   const groups = sections
     .filter((key) => buckets[key].length > 0)
@@ -164,8 +211,15 @@ export function groupTasksForView(tasks, view, todayStr = localDateString(), sho
       overdue: key === "overdue",
       tasks: buckets[key].slice().sort(compareDue),
     }));
-  if (showCompleted && done.length > 0) {
-    groups.push({ key: "done", label: "完了", overdue: false, tasks: done.slice().sort(compareDue) });
+  if (showCompleted) {
+    let done;
+    let hasMore = false;
+    if (view === "today") {
+      done = tasks.filter((t) => isCompletedForToday(t, todayStr)).sort(compareCompletedDesc);
+    } else {
+      ({ tasks: done, hasMore } = completedTasksForDueView(tasks, todayStr, completedPages));
+    }
+    if (done.length > 0) groups.push({ key: "done", label: "完了", overdue: false, tasks: done, hasMore });
   }
   return groups;
 }

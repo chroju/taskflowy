@@ -86,8 +86,11 @@ npm run test:ui    # vitest UI起動
   切り替える。状態はビュー/タブごとに独立で、`taskflowy_settings`の`showCompletedTasks`に
   スコープ（`today`/`due`/`nodes`/`daily`/場所id）をキーとするマップとして保存
   （`showCompletedFor`/`toggleShowCompleted`、`views.js`）。Today/Deadlinesでは表示ON時に
-  末尾へ「完了」グループを追加する（そのビューのセクションに属する完了タスクのみ。判定は
-  `groupTasksForView`の第4引数）。メモ（非タスク）は常に表示。ほかの純粋ロジックは
+  末尾へ「完了」グループを追加する。Todayは「期限が今日 or 今日完了にしたもの」のみ、
+  Deadlinesは全完了タスクを完了日（`completedAt`、無ければ期限で代用）の降順で直近7日分から
+  表示し、スクロール下端で7日ずつ拡張する（Daily同様。完了が無い週はスキップ。純粋ロジックは
+  `completedTasksForDueView`/`completedDateOf`/`countCompletedForView`、`tasks.js`）。
+  メモ（非タスク）は常に表示。ほかの純粋ロジックは
   `filterCompletedItems`/`visibleDailyGroups`（`views.js`）と`groupNodeTasks`の第2引数（`tasks.js`）
 - **Dailyビュー**: `GET /api/daily`が日付キーのプローブ（`GET /nodes?parent_id=YYYY-MM-DD`、
   404=その日なし）で日付グループを返す。新しい日付が上、下方向へ無限スクロール

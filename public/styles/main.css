@@ -1019,6 +1019,12 @@ button.sheet-prop-value {
   color: var(--subtext0);
 }
 
+/* 連続追加トグル（タスク/ノート両モードの追加ボタン横） */
+.compose-continuous {
+  flex: none;
+  white-space: nowrap;
+}
+
 .compose-submit {
   flex: none;
   padding: 12px 26px;
@@ -1086,6 +1092,11 @@ button.sheet-prop-value {
 .compose-note-toolbar .compose-submit {
   padding: 9px 18px;
   font-size: 13px;
+}
+
+.compose-note-toolbar .compose-continuous {
+  padding: 8px 11px;
+  font-size: 12.5px;
 }
 
 /* ---- Compose: 送信先セレクタ ---- */

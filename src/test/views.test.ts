@@ -20,6 +20,7 @@ import {
   visibleDailyGroups,
   composeDestForView,
   initialComposeMode,
+  afterSendAction,
   normalizePosition,
   dayPhrase,
   destLabel,
@@ -299,6 +300,12 @@ describe("compose destination", () => {
     expect(initialComposeMode("task")).toBe("task");
     expect(initialComposeMode(undefined)).toBe("task");
     expect(initialComposeMode("weird")).toBe("task");
+  });
+
+  it("continues after send only when 連続追加 is on (off closes the sheet)", () => {
+    expect(afterSendAction(true)).toBe("continue");
+    expect(afterSendAction(false)).toBe("close");
+    expect(afterSendAction(undefined)).toBe("close");
   });
 
   it("normalizes the insert position, defaulting to bottom", () => {

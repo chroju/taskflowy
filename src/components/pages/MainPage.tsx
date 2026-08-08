@@ -156,6 +156,7 @@ export const MainPage: FC = () => (
             </div>
             <div class="compose-footer">
               <span class="compose-footer-note">書き込み先の日付と、タスクの期限は別ものです。</span>
+              <button id="btn-continuous-task" class="chip compose-continuous">連続</button>
               <button id="btn-save-task" class="compose-submit">追加</button>
             </div>
           </div>
@@ -169,6 +170,7 @@ export const MainPage: FC = () => (
                 <span id="compose-dest-small-name" class="compose-dest-name"></span>
               </button>
               <span class="compose-note-hint">空行より下がノート</span>
+              <button id="btn-continuous-note" class="chip compose-continuous">連続</button>
               <button id="btn-save-note" class="compose-submit">追加</button>
             </div>
           </div>

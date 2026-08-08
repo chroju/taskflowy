@@ -240,6 +240,12 @@ export function initialComposeMode(saved) {
   return saved === "note" ? "note" : "task";
 }
 
+// 連続追加はシートを開くたび OFF で始まる一時的なモード（永続化しない）。
+// 送信成功後: ON なら入力だけ初期化して続行、OFF ならシートを閉じる。
+export function afterSendAction(continuous) {
+  return continuous ? "continue" : "close";
+}
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }

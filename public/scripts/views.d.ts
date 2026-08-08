@@ -68,6 +68,7 @@ export function splitNoteDraft(text: string | null | undefined): { name: string;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";
 export function initialComposeMode(saved: unknown): "task" | "note";
+export function afterSendAction(continuous: unknown): "continue" | "close";
 export function dayPhrase(day: string | null, todayStr?: string): string;
 export function destLabel(dest: ComposeDest | null, places: Place[], todayStr?: string): string;
 export function destSendTarget(

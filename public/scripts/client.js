@@ -38,6 +38,7 @@ import {
   composeDestForView,
   topUiLayer,
   initialComposeMode,
+  afterSendAction,
   normalizePosition,
   destLabel,
   destSendTarget,
@@ -137,6 +138,8 @@ const taskNameInput = $("task-name-input");
 const taskDateInput = $("task-date-input");
 const taskTimeInput = $("task-time-input");
 const btnSaveTask = $("btn-save-task");
+const btnContinuousTask = $("btn-continuous-task");
+const btnContinuousNote = $("btn-continuous-note");
 const composePicker = $("compose-picker");
 const btnPickerDone = $("btn-picker-done");
 const pickerDailyChips = $("picker-daily-chips");
@@ -1409,6 +1412,7 @@ function destIconSvg(dest, size = 16) {
 }
 
 let composeMode = "task"; // 'task' | 'note'
+let composeContinuous = false; // 連続追加。シートを開くたび OFF に戻る
 let composeDest = null; // views.js の ComposeDest
 let pickerCustomDay = false; // セレクタで「日付…」チップを選んでいるか
 let composeTreeLoaded = false;
@@ -1425,6 +1429,7 @@ function resetComposeInputs() {
 
 function openAddSheet() {
   composeMode = initialComposeMode(settings.composeMode); // 前回使ったモードで開く
+  composeContinuous = false; // 連続追加は毎回 OFF から
   // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
   composeDest = composeDestForView(view, settings.places);
   pickerCustomDay = false;
@@ -1451,6 +1456,9 @@ function renderCompose() {
   composeDestIcon.innerHTML = destIconSvg(composeDest, 16);
   composeDestSmallName.textContent = label;
   composeDestSmallIcon.innerHTML = destIconSvg(composeDest, 13);
+
+  btnContinuousTask.classList.toggle("active", composeContinuous);
+  btnContinuousNote.classList.toggle("active", composeContinuous);
 }
 
 function renderDueChips() {
@@ -1639,10 +1647,14 @@ async function handleAddTask() {
     }
 
     afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
-    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
-    resetComposeInputs();
-    taskNameInput.focus();
     showToast("追加しました");
+    if (afterSendAction(composeContinuous) === "continue") {
+      // 連続追加 ON: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+      resetComposeInputs();
+      taskNameInput.focus();
+    } else {
+      closeViaBack();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1675,12 +1687,16 @@ async function handleSendNote() {
       }),
     });
     afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
-    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
-    resetComposeInputs();
     // ノートを Daily に書いたときは背後を Daily ビューへ移動してその行を見せる
     if (dest.kind === "daily" && view !== "daily") switchView("daily");
-    noteInput.focus();
     showToast("追加しました");
+    if (afterSendAction(composeContinuous) === "continue") {
+      // 連続追加 ON: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+      resetComposeInputs();
+      noteInput.focus();
+    } else {
+      closeViaBack();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1722,6 +1738,13 @@ function bindEvents() {
 
   taskDateInput.addEventListener("input", renderDueChips);
   taskTimeInput.addEventListener("input", renderDueChips);
+
+  for (const btn of [btnContinuousTask, btnContinuousNote]) {
+    btn.addEventListener("click", () => {
+      composeContinuous = !composeContinuous;
+      renderCompose();
+    });
+  }
 
   btnSaveTask.addEventListener("click", handleAddTask);
   taskNameInput.addEventListener("keydown", (e) => {

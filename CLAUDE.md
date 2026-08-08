@@ -83,11 +83,12 @@ npm run test:ui    # vitest UI起動
   判定は`filterFinishedNodes`（純粋関数）。TODOを1件も持たないノードは非表示の対象外
 - **完了タスクの表示トグル**: 全ビュー（Today/Deadlinesタブ・Nodesドリルダウン・Daily・
   登録ノードビュー）で完了済みタスクをデフォルト非表示にし、一覧上部のボタンで表示/非表示を
-  切り替える。状態は`taskflowy_settings`の`showCompletedTasks`に保存（全ビュー共通）。
-  Today/Deadlinesでは表示ON時に末尾へ「完了」グループを追加する（そのビューのセクションに
-  属する完了タスクのみ。判定は`groupTasksForView`の第4引数）。メモ（非タスク）は常に表示。
-  ほかの純粋ロジックは`filterCompletedItems`/`visibleDailyGroups`（`views.js`）と
-  `groupNodeTasks`の第2引数（`tasks.js`）
+  切り替える。状態はビュー/タブごとに独立で、`taskflowy_settings`の`showCompletedTasks`に
+  スコープ（`today`/`due`/`nodes`/`daily`/場所id）をキーとするマップとして保存
+  （`showCompletedFor`/`toggleShowCompleted`、`views.js`）。Today/Deadlinesでは表示ON時に
+  末尾へ「完了」グループを追加する（そのビューのセクションに属する完了タスクのみ。判定は
+  `groupTasksForView`の第4引数）。メモ（非タスク）は常に表示。ほかの純粋ロジックは
+  `filterCompletedItems`/`visibleDailyGroups`（`views.js`）と`groupNodeTasks`の第2引数（`tasks.js`）
 - **Dailyビュー**: `GET /api/daily`が日付キーのプローブ（`GET /nodes?parent_id=YYYY-MM-DD`、
   404=その日なし）で日付グループを返す。新しい日付が上、下方向へ無限スクロール
   （`before_date`でページング）。ノート0件の日は見出しごと出さない

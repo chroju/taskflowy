@@ -14,6 +14,8 @@ import {
   itemTimeLabel,
   splitNoteDraft,
   topUiLayer,
+  showCompletedFor,
+  toggleShowCompleted,
   filterCompletedItems,
   visibleDailyGroups,
   composeDestForView,
@@ -192,6 +194,29 @@ describe("topUiLayer", () => {
 
   it("closes the settings screen", () => {
     expect(topUiLayer({ ...none, settingsOpen: true })).toBe("settings");
+  });
+});
+
+describe("per-view showCompleted state", () => {
+  it("reads a scope's flag from the map, defaulting to false", () => {
+    expect(showCompletedFor({ today: true }, "today")).toBe(true);
+    expect(showCompletedFor({ today: true }, "due")).toBe(false);
+    expect(showCompletedFor(undefined, "today")).toBe(false);
+  });
+
+  it("treats a legacy boolean value as empty state", () => {
+    expect(showCompletedFor(true, "today")).toBe(false);
+  });
+
+  it("toggles one scope without touching the others", () => {
+    const next = toggleShowCompleted({ today: true }, "due");
+    expect(next).toEqual({ today: true, due: true });
+    expect(toggleShowCompleted(next, "today")).toEqual({ today: false, due: true });
+  });
+
+  it("toggles from a missing or legacy state", () => {
+    expect(toggleShowCompleted(undefined, "daily")).toEqual({ daily: true });
+    expect(toggleShowCompleted(true, "daily")).toEqual({ daily: true });
   });
 });
 

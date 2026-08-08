@@ -31,6 +31,8 @@ import {
   itemTimeLabel,
   filterCompletedItems,
   visibleDailyGroups,
+  showCompletedFor,
+  toggleShowCompleted,
   composeDestForView,
   topUiLayer,
   initialComposeMode,
@@ -353,15 +355,16 @@ function render() {
   }
 }
 
-// 完了済みタスクの表示トグル（Daily / 登録ノード / ドリルダウン共通）。
+// 完了済みタスクの表示トグル。状態はビュー/タブごとに独立
+// （scope: 'today' | 'due' | 'nodes' | 'daily' | <place id>）。
 // 完了済みが 1 件も無いビューには出さない。
-function buildCompletedToggle(completedCount) {
-  const show = settings.showCompletedTasks === true;
+function buildCompletedToggle(completedCount, scope) {
+  const show = showCompletedFor(settings.showCompletedTasks, scope);
   const btn = document.createElement("button");
   btn.className = "node-filter" + (show ? " active" : "");
   btn.textContent = show ? "完了済みを隠す" : `完了済みを表示 (${completedCount})`;
   btn.addEventListener("click", () => {
-    settings.showCompletedTasks = !show;
+    settings.showCompletedTasks = toggleShowCompleted(settings.showCompletedTasks, scope);
     saveSettings();
     render();
   });
@@ -550,7 +553,7 @@ function renderDailyView() {
     return;
   }
 
-  const showCompleted = settings.showCompletedTasks === true;
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, "daily");
   const groups = visibleDailyGroups(dailyGroups, showCompleted);
   const completedCount = dailyCounts(dailyGroups).items - dailyCounts(visibleDailyGroups(dailyGroups, false)).items;
 
@@ -565,7 +568,7 @@ function renderDailyView() {
     return;
   }
 
-  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, "daily"));
 
   if (!groups.length) {
     const empty = document.createElement("p");
@@ -671,7 +674,7 @@ function renderNodeView() {
     return;
   }
 
-  const showCompleted = settings.showCompletedTasks === true;
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, view);
   const items = filterCompletedItems(entry.items, showCompleted);
   const completedCount = entry.items.length - filterCompletedItems(entry.items, false).length;
 
@@ -681,7 +684,7 @@ function renderNodeView() {
     return;
   }
 
-  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, view));
 
   if (!items.length) {
     const empty = document.createElement("p");
@@ -711,7 +714,9 @@ function renderList(node) {
   }
 
   const today = localDateString();
-  const showCompleted = settings.showCompletedTasks === true;
+  // ドリルダウンは 'nodes' スコープ、Today/Deadlines はタブごとに独立
+  const scope = node ? "nodes" : tab;
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, scope);
   const groups = node
     ? groupNodeTasks(node.tasks, showCompleted)
     : groupTasksForView(tasksState, tab, today, showCompleted);
@@ -722,7 +727,7 @@ function renderList(node) {
   const completedCount = node
     ? node.done
     : (groupTasksForView(tasksState, tab, today, true).find((g) => g.key === "done")?.tasks.length ?? 0);
-  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, scope));
 
   if (!groups.length) {
     const empty = document.createElement("p");

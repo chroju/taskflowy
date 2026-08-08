@@ -51,6 +51,10 @@ export function topUiLayer(
   flags: UiLayerFlags
 ): "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
 
+export type ShowCompletedState = Record<string, boolean> | boolean | undefined | null;
+export function showCompletedFor(state: ShowCompletedState, scope: string): boolean;
+export function toggleShowCompleted(state: ShowCompletedState, scope: string): Record<string, boolean>;
+
 export interface ViewItemLike {
   todo?: boolean;
   completed?: boolean;

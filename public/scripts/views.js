@@ -159,6 +159,21 @@ export function topUiLayer({ deleteOpen, pickerOpen, detailOpen, composeOpen, se
   return null;
 }
 
+// ---- Per-view showCompleted state ----
+
+// The completed-tasks toggle is independent per view/tab: state is a map
+// keyed by scope ('today' | 'due' | 'nodes' | 'daily' | <place id>). A
+// legacy boolean (from the short-lived shared setting) reads as all-off.
+
+export function showCompletedFor(state, scope) {
+  return !!(state && typeof state === "object" && state[scope]);
+}
+
+export function toggleShowCompleted(state, scope) {
+  const base = state && typeof state === "object" ? state : {};
+  return { ...base, [scope]: !base[scope] };
+}
+
 // ---- Completed-task filtering (Daily / registered-node views) ----
 
 // Hides completed todos unless showCompleted. Memos (non-todo items) are

@@ -41,6 +41,7 @@ export function itemTimeLabel(createdAt: number): string;
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";
+export function initialComposeMode(saved: unknown): "task" | "note";
 export function dayPhrase(day: string | null, todayStr?: string): string;
 export function destLabel(dest: ComposeDest | null, places: Place[], todayStr?: string): string;
 export function destSendTarget(

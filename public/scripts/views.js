@@ -185,6 +185,12 @@ export function normalizePosition(value) {
   return value === "top" ? "top" : "bottom";
 }
 
+// The compose sheet reopens in the mode it was last used in. Anything but an
+// explicit "note" (including legacy/unset settings) means task.
+export function initialComposeMode(saved) {
+  return saved === "note" ? "note" : "task";
+}
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }

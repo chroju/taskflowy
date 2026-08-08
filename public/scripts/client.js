@@ -30,6 +30,7 @@ import {
   dailyCounts,
   itemTimeLabel,
   composeDestForView,
+  initialComposeMode,
   normalizePosition,
   destLabel,
   destSendTarget,
@@ -1256,22 +1257,27 @@ let composeDest = null; // views.js の ComposeDest
 let pickerCustomDay = false; // セレクタで「日付…」チップを選んでいるか
 let composeTreeLoaded = false;
 
-function openAddSheet() {
+// 入力欄と期限だけを初期状態に戻す（モードと書き込み先は保つ）
+function resetComposeInputs() {
   taskNameInput.value = "";
   noteInput.value = "";
   taskDateInput.value = "";
   taskTimeInput.value = "";
   addDue = "today";
-  composeMode = "task";
+  renderDueChips();
+}
+
+function openAddSheet() {
+  composeMode = initialComposeMode(settings.composeMode); // 前回使ったモードで開く
   // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
   composeDest = composeDestForView(view, settings.places);
   pickerCustomDay = false;
   composePicker.classList.add("hidden");
   composeMain.classList.remove("hidden");
   renderCompose();
-  renderDueChips();
+  resetComposeInputs();
   sheetAddEl.classList.remove("hidden");
-  taskNameInput.focus();
+  (composeMode === "task" ? taskNameInput : noteInput).focus();
 }
 
 function renderCompose() {
@@ -1475,7 +1481,9 @@ async function handleAddTask() {
     }
 
     afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
-    closeSheets();
+    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+    resetComposeInputs();
+    taskNameInput.focus();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
@@ -1509,9 +1517,11 @@ async function handleSendNote() {
       }),
     });
     afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
-    closeSheets();
-    // ノートを Daily に書いたときは Daily ビューへ移動してその行を見せる
+    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+    resetComposeInputs();
+    // ノートを Daily に書いたときは背後を Daily ビューへ移動してその行を見せる
     if (dest.kind === "daily" && view !== "daily") switchView("daily");
+    noteInput.focus();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
@@ -1569,6 +1579,8 @@ function bindEvents() {
   composeModebar.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       composeMode = btn.dataset.mode;
+      settings.composeMode = composeMode; // 次回もこのモードで開く
+      saveSettings();
       renderCompose();
       (composeMode === "task" ? taskNameInput : noteInput).focus();
     });

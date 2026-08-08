@@ -14,6 +14,7 @@ import {
   itemTimeLabel,
   splitNoteDraft,
   composeDestForView,
+  initialComposeMode,
   normalizePosition,
   dayPhrase,
   destLabel,
@@ -204,6 +205,13 @@ describe("compose destination", () => {
     expect(destLabel({ kind: "daily", day: null }, places, TODAY)).toBe("Daily · 今日（08/08）");
     expect(destLabel({ kind: "place", placeId: "p1" }, places, TODAY)).toBe("記事クリップ");
     expect(destLabel({ kind: "node", nodeId: "n9", name: "資料" }, places, TODAY)).toBe("資料");
+  });
+
+  it("restores the last used compose mode, defaulting to task", () => {
+    expect(initialComposeMode("note")).toBe("note");
+    expect(initialComposeMode("task")).toBe("task");
+    expect(initialComposeMode(undefined)).toBe("task");
+    expect(initialComposeMode("weird")).toBe("task");
   });
 
   it("normalizes the insert position, defaulting to bottom", () => {

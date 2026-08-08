@@ -58,7 +58,8 @@ npm run test:ui    # vitest UI起動
 - `scripts/utils.js` - `escapeHtml` / `stripHtml`のみ（Jotflowy由来の自由記述編集系ヘルパーは不要なため削除済み）
 - `styles/main.css` - スタイル（Charcoalテーマ=無彩色+期限切れ`#E39098`のみ。トークンは
   `design_handoff_taskflowy_views`のハンドオフ資料が正。基礎寸法は`design_handoff_workflowy_tasks`。
-  フォントはBarlow / Barlow Condensed）
+  フォントは日本語を含む全UIテキストがZen Kaku Gothic New。数値・時刻・日付だけ桁を
+  揃えるため`ui-monospace`。この書体は600を持たないので見出しの600は700に丸める）
 
 ### Server Components (src/components/)
 - `layouts/BaseLayout.tsx` - HTMLベーステンプレート（PWA設定、Google Fonts読み込み含む）
@@ -94,7 +95,9 @@ npm run test:ui    # vitest UI起動
   `filterCompletedItems`/`visibleDailyGroups`（`views.js`）と`groupNodeTasks`の第2引数（`tasks.js`）
 - **Dailyビュー**: `GET /api/daily`が日付キーのプローブ（`GET /nodes?parent_id=YYYY-MM-DD`、
   404=その日なし）で日付グループを返す。新しい日付が上、下方向へ無限スクロール
-  （`before_date`でページング）。ノート0件の日は見出しごと出さない
+  （`before_date`でページング）。ノート0件の日は見出しごと出さない。
+  日付見出しは「日付＋曜日バッジ＋罫線＋件数」の帯（`dailyDateParts`、`views.js`）で、
+  今日だけ曜日バッジを反転する
 - **登録ノードビュー**: `GET /api/nodes/:id/children`で子（1階層）をWorkflowyの並び順のまま表示。
   タスクとメモが混在し、タスクは本文下のTODO/DONEタグだけで示す（タグタップで完了トグル）
 - **戻るボタン**: History APIと統合。レイヤー（シート/設定/ドリルダウン）を開くとき番兵の
@@ -107,6 +110,11 @@ npm run test:ui    # vitest UI起動
   詳細シートはタスク/メモでレイアウトを分ける（メモは時刻·場所+note面の読み物レイアウト）。
   期限は詳細シートの「明日へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）、
   メモはメモ行タップで編集（`POST /api/nodes/:id/note`）
+- **日付ノードの行操作**: Dailyの日付見出しも項目行と同じ操作対象。タップ=デイリーノートの
+  詳細シート（見出し「デイリーノート」+タイトル`YYYY/M/D（曜）`=`dailyNoteTitle`、
+  Workflowyで開く+削除のみ）、左スワイプ=その日ごと削除（`DELETE /api/nodes/YYYY-MM-DD`。
+  日付キーがそのままノード識別子として通る）。日付に完了の概念がないため右スワイプと
+  「完了にする」は持たせない（`bindRowSwipe`の`deleteOnly`、`resolveSwipeAction`/`clampDx`）
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/

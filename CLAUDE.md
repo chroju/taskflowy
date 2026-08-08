@@ -59,7 +59,9 @@ npm run test:ui    # vitest UI起動
 - `styles/main.css` - スタイル（Charcoalテーマ=無彩色+期限切れ`#E39098`のみ。トークンは
   `design_handoff_taskflowy_views`のハンドオフ資料が正。基礎寸法は`design_handoff_workflowy_tasks`。
   フォントは日本語を含む全UIテキストがZen Kaku Gothic New。数値・時刻・日付だけ桁を
-  揃えるため`ui-monospace`。この書体は600を持たないので見出しの600は700に丸める）
+  揃えるため`ui-monospace`。読み込むウェイトは400/500/700で、600は実ファイルが無く
+  指定しても500で描画されるため、sansのウェイト指定はこの3つに揃える
+  （monoの600はシステムフォントなので有効））
 
 ### Server Components (src/components/)
 - `layouts/BaseLayout.tsx` - HTMLベーステンプレート（PWA設定、Google Fonts読み込み含む）

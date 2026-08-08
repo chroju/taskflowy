@@ -24,8 +24,9 @@
      日本語がシステムフォントに落ちて字面・ウェイトが噛み合わなかった。
      本文（--font-sans）と見出し（--font-cond）で同じ書体を使い、差はサイズと
      ウェイトで付ける。数値・時刻・日付だけは桁を揃えるため mono のまま。
-     Zen Kaku Gothic New は 600 を持たない（300/400/500/700/900）ので、
-     見出しの「600」は 700 に丸める。 */
+     この書体は 400/500/700 を読み込んでいる（600 は実ファイルが無く、指定しても
+     500 で描画される）。sans の指定は 400/500/700 のいずれかに揃え、CSS の値と
+     実際の描画がずれないようにする。mono 側の 600 はシステムフォントなので有効。 */
   --font-sans: "Zen Kaku Gothic New", system-ui, sans-serif;
   --font-cond: "Zen Kaku Gothic New", system-ui, sans-serif;
   --font-mono: ui-monospace, Menlo, Consolas, monospace;
@@ -331,7 +332,7 @@ button {
 }
 
 .task-title {
-  font: 600 17px/1.45 var(--font-sans);
+  font: 500 17px/1.45 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
   word-break: break-word;
@@ -652,7 +653,7 @@ button {
 }
 
 .memo-name {
-  font: 600 17px/1.5 var(--font-sans);
+  font: 500 17px/1.5 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
   word-break: break-word;
@@ -777,7 +778,7 @@ button {
 }
 
 .sheet-title {
-  font: 600 21px/1.4 var(--font-sans);
+  font: 500 21px/1.4 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
 }
@@ -790,7 +791,7 @@ button {
 }
 
 .sheet-title.memo {
-  font: 600 24px/1.4 var(--font-sans);
+  font: 500 24px/1.4 var(--font-sans);
 }
 
 .sheet-note-face {
@@ -900,14 +901,14 @@ button.sheet-prop-value {
   border: 0;
   background: var(--accent);
   color: var(--base);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .sheet-action.danger {
   border: 0;
   background: var(--maroon);
   color: var(--base);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .sheet-delete-target {
@@ -1131,7 +1132,7 @@ button.sheet-prop-value {
   border-radius: 999px;
   background: var(--accent);
   color: var(--base);
-  font: 600 14px/1 var(--font-sans);
+  font: 500 14px/1 var(--font-sans);
   cursor: pointer;
 }
 
@@ -1211,7 +1212,7 @@ button.sheet-prop-value {
   border: 0;
   background: transparent;
   color: var(--accent);
-  font: 600 14px/1 var(--font-sans);
+  font: 500 14px/1 var(--font-sans);
   cursor: pointer;
   padding: 6px 0 6px 12px;
 }
@@ -1323,7 +1324,7 @@ button.sheet-prop-value {
   border-radius: 999px;
   background: var(--accent);
   color: var(--base);
-  font: 600 13.5px/1 var(--font-sans);
+  font: 500 13.5px/1 var(--font-sans);
   cursor: pointer;
 }
 
@@ -1481,7 +1482,7 @@ button.sheet-prop-value {
   border-radius: 11px;
   background: var(--accent);
   color: var(--base);
-  font: 600 13.5px/1 var(--font-sans);
+  font: 500 13.5px/1 var(--font-sans);
   cursor: pointer;
 }
 

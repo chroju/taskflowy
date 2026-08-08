@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseTimeMarkup, stripTimeMarkup, buildTimeMarkup, setTimeMarkup } from "../api/time-markup";
+import {
+  parseTimeMarkup,
+  stripTimeMarkup,
+  buildTimeMarkup,
+  setTimeMarkup,
+  replaceNameText,
+} from "../api/time-markup";
 
 describe("parseTimeMarkup", () => {
   it("parses a date-only time markup", () => {
@@ -106,5 +112,36 @@ describe("setTimeMarkup", () => {
   it("appends markup with a leading space when name does not end with one", () => {
     const result = setTimeMarkup("Task", "2026-07-28");
     expect(result.startsWith("Task <time")).toBe(true);
+  });
+});
+
+describe("replaceNameText", () => {
+  it("replaces the text of a name that has no markup", () => {
+    expect(replaceNameText("Buy milk", "Buy soy milk")).toBe("Buy soy milk");
+  });
+
+  it("keeps the existing time markup when the text changes", () => {
+    const name = 'Buy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>';
+    expect(replaceNameText(name, "Buy soy milk")).toBe(
+      'Buy soy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>'
+    );
+  });
+
+  it("keeps the markup when the new text is empty", () => {
+    const name = 'Buy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>';
+    expect(replaceNameText(name, "")).toBe(
+      '<time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>'
+    );
+  });
+
+  it("keeps markup that sits at the head of the name", () => {
+    const name = '<time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time> Buy milk';
+    expect(replaceNameText(name, "Buy soy milk")).toBe(
+      'Buy soy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>'
+    );
+  });
+
+  it("trims surrounding whitespace of the new text", () => {
+    expect(replaceNameText("Buy milk", "  Buy soy milk  ")).toBe("Buy soy milk");
   });
 });

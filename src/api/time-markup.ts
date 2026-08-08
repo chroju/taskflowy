@@ -78,6 +78,17 @@ export function buildTimeMarkup(date: string, time?: string): string {
   return `<time ${attrs}>${display}</time>`;
 }
 
+// Rewrites the text of a name while keeping its due-date markup. The markup is
+// re-appended at the end regardless of where it sat before, so the due date
+// survives a rename typed against the stripped (display) text.
+export function replaceNameText(name: string, text: string): string {
+  const match = name.match(TIME_TAG_RE);
+  const trimmed = text.trim();
+  if (!match) return trimmed;
+  if (trimmed === "") return match[0];
+  return `${trimmed} ${match[0]}`;
+}
+
 export function setTimeMarkup(name: string, date: string, time?: string): string {
   const markup = buildTimeMarkup(date, time);
   if (TIME_TAG_RE.test(name)) {

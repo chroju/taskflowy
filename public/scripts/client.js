@@ -46,6 +46,7 @@ import {
   destLabel,
   destSendTarget,
   splitNoteDraft,
+  layoutActionLabel,
   toggleInView,
   movePlace,
   reorderPlaces,
@@ -124,6 +125,11 @@ const sheetNoteEditor = $("sheet-note-editor");
 const sheetNoteInput = $("sheet-note-input");
 const btnSheetSaveNote = $("btn-sheet-save-note");
 const btnSheetCancelNote = $("btn-sheet-cancel-note");
+const sheetTitleEditor = $("sheet-title-editor");
+const sheetTitleInput = $("sheet-title-input");
+const btnSheetSaveTitle = $("btn-sheet-save-title");
+const btnSheetCancelTitle = $("btn-sheet-cancel-title");
+const btnSheetLayout = $("btn-sheet-layout");
 
 const sheetAddEl = $("sheet-add");
 const composeMain = $("compose-main");
@@ -1280,11 +1286,15 @@ function fillSheet() {
 
   sheetTaskTitle.textContent = normalizeTitle(entity.plainName) || "（無題）";
   sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
+  // 日付ノードの名前は日付キーそのものなので編集させない
+  sheetTaskTitle.classList.toggle("editable", !sheetDate);
   sheetItemMeta.classList.toggle("hidden", !sheetIsMemo && !sheetDate);
   sheetTaskProps.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
   sheetItemNote.classList.toggle("hidden", !sheetIsMemo || !entity.note);
   btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
   btnSheetComplete.classList.toggle("hidden", !!sheetDate);
+  btnSheetLayout.classList.toggle("hidden", !!sheetDate);
+  btnSheetLayout.textContent = layoutActionLabel(!sheetIsMemo);
   sheetActions.classList.toggle("only-delete", !!sheetDate);
 
   if (sheetDate) {
@@ -1334,14 +1344,22 @@ function showSheet() {
   fillSheet();
   sheetDueEditor.classList.add("hidden");
   sheetNoteEditor.classList.add("hidden");
+  sheetTitleEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
   armHistory();
+}
+
+// シート内のエディタは同時に 1 つだけ開く
+function closeSheetEditors() {
+  sheetDueEditor.classList.add("hidden");
+  sheetNoteEditor.classList.add("hidden");
+  sheetTitleEditor.classList.add("hidden");
 }
 
 function toggleDueEditor() {
   if (!sheetTask) return;
   const opening = sheetDueEditor.classList.contains("hidden");
-  sheetNoteEditor.classList.add("hidden");
+  closeSheetEditors();
   sheetDueEditor.classList.toggle("hidden", !opening);
   if (opening) {
     sheetDateInput.value = sheetTask.due ? sheetTask.due.date : "";
@@ -1352,11 +1370,22 @@ function toggleDueEditor() {
 function toggleNoteEditor() {
   if (!sheetTask) return;
   const opening = sheetNoteEditor.classList.contains("hidden");
-  sheetDueEditor.classList.add("hidden");
+  closeSheetEditors();
   sheetNoteEditor.classList.toggle("hidden", !opening);
   if (opening) {
     sheetNoteInput.value = sheetTask.note ? stripHtml(sheetTask.note) : "";
     sheetNoteInput.focus();
+  }
+}
+
+function toggleTitleEditor() {
+  if (!sheetTask || sheetDate) return;
+  const opening = sheetTitleEditor.classList.contains("hidden");
+  closeSheetEditors();
+  sheetTitleEditor.classList.toggle("hidden", !opening);
+  if (opening) {
+    sheetTitleInput.value = normalizeTitle(sheetTask.plainName);
+    sheetTitleInput.focus();
   }
 }
 
@@ -1393,6 +1422,91 @@ async function saveSheetNote() {
     showToast(e.message, true);
   } finally {
     btnSheetSaveNote.disabled = false;
+  }
+}
+
+// 名前はサーバ側で <time> 期限マークアップを付け直すので、送るのは表示テキスト
+// だけでよい。名前は一覧の行にも出るので保存後は render() まで回す。
+async function saveSheetTitle() {
+  if (!sheetTask || sheetDate) return;
+  const entity = sheetTask;
+  const name = sheetTitleInput.value.trim();
+  if (!name) {
+    showToast("タイトルを入力してください", true);
+    return;
+  }
+  btnSheetSaveTitle.disabled = true;
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/name`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    // 表示に使われるのは plainName だけ（raw name は <time> 込みでサーバ側の値が正）
+    entity.plainName = name;
+    persistOriginCache(sheetOrigin);
+    fillSheet();
+    sheetTitleEditor.classList.add("hidden");
+    render();
+    showToast("タイトルを保存しました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSheetSaveTitle.disabled = false;
+  }
+}
+
+// note ⇄ todo（Workflowy の layoutMode）。Tasks ビューは layoutMode="todo" の
+// ノードだけを集めた一覧なので、メモに変えたら tasksState からも外す。
+async function toggleSheetLayout() {
+  if (!sheetTask || sheetDate) return;
+  const entity = sheetTask;
+  const origin = sheetOrigin;
+  const wasTodo = !sheetIsMemo;
+  btnSheetLayout.disabled = true;
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/layout`, {
+      method: "POST",
+      body: JSON.stringify({ todo: !wasTodo }),
+    });
+
+    if (wasTodo) {
+      // タスク → メモ: Tasks ビューの対象から外れる
+      tasksState = tasksState.filter((t) => t.id !== entity.id);
+    } else if (!tasksState.some((t) => t.id === entity.id)) {
+      // メモ → タスク: Tasks ビューに載る。親のパスは次の取得で埋まる
+      tasksState = [
+        {
+          id: entity.id,
+          name: entity.name,
+          plainName: entity.plainName,
+          note: entity.note,
+          parentId: null,
+          parentPath: [placeLabelForOrigin(origin)].filter(Boolean),
+          createdAt: entity.createdAt || Math.floor(Date.now() / 1000),
+          completedAt: null,
+          due: entity.due || null,
+          completed: !!entity.completed,
+        },
+        ...tasksState,
+      ];
+    }
+    setTasksCache(tasksState);
+
+    if (origin === "tasks") {
+      // Tasks ビューはタスクだけの一覧なので、メモにした行はもう出せない
+      closeViaBack();
+    } else {
+      entity.todo = !wasTodo;
+      persistOriginCache(origin);
+      sheetIsMemo = !entity.todo;
+      fillSheet();
+    }
+    render();
+    showToast(wasTodo ? "メモにしました" : "タスクにしました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSheetLayout.disabled = false;
   }
 }
 
@@ -1893,6 +2007,8 @@ function bindEvents() {
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
   sheetTaskNote.addEventListener("click", toggleNoteEditor);
+  sheetTaskTitle.addEventListener("click", toggleTitleEditor);
+  btnSheetLayout.addEventListener("click", toggleSheetLayout);
 
   sheetTaskEl.querySelectorAll(".sheet-due-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -1913,6 +2029,9 @@ function bindEvents() {
 
   btnSheetSaveNote.addEventListener("click", saveSheetNote);
   btnSheetCancelNote.addEventListener("click", () => sheetNoteEditor.classList.add("hidden"));
+
+  btnSheetSaveTitle.addEventListener("click", saveSheetTitle);
+  btnSheetCancelTitle.addEventListener("click", () => sheetTitleEditor.classList.add("hidden"));
 
   btnConfirmDelete.addEventListener("click", confirmDelete);
   btnCancelDelete.addEventListener("click", closeViaBack);

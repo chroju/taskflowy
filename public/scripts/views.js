@@ -234,10 +234,25 @@ export function normalizePosition(value) {
   return value === "top" ? "top" : "bottom";
 }
 
+// compose シート本体の挿入位置トグル（▲/▼で先頭/末尾を行き来する）
+export function togglePosition(value) {
+  return normalizePosition(value) === "top" ? "bottom" : "top";
+}
+
+export function positionLabel(value) {
+  return normalizePosition(value) === "top" ? "▲ 先頭" : "▼ 末尾";
+}
+
 // The compose sheet reopens in the mode it was last used in. Anything but an
 // explicit "note" (including legacy/unset settings) means task.
 export function initialComposeMode(saved) {
   return saved === "note" ? "note" : "task";
+}
+
+// 連続追加はシートを開くたび OFF で始まる一時的なモード（永続化しない）。
+// 送信成功後: ON なら入力だけ初期化して続行、OFF ならシートを閉じる。
+export function afterSendAction(continuous) {
+  return continuous ? "continue" : "close";
 }
 
 function pad2(n) {

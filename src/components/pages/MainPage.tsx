@@ -138,6 +138,7 @@ export const MainPage: FC = () => (
               <span id="compose-dest-name" class="compose-dest-name"></span>
               <span class="compose-dest-chevron">▾</span>
             </button>
+            <button id="btn-pos-task" class="chip compose-pos" title="挿入位置"></button>
           </div>
 
           {/* タスクモード */}
@@ -156,6 +157,7 @@ export const MainPage: FC = () => (
             </div>
             <div class="compose-footer">
               <span class="compose-footer-note">書き込み先の日付と、タスクの期限は別ものです。</span>
+              <button id="btn-continuous-task" class="chip compose-continuous">連続</button>
               <button id="btn-save-task" class="compose-submit">追加</button>
             </div>
           </div>
@@ -168,7 +170,8 @@ export const MainPage: FC = () => (
                 <span id="compose-dest-small-icon" class="compose-dest-icon small"></span>
                 <span id="compose-dest-small-name" class="compose-dest-name"></span>
               </button>
-              <span class="compose-note-hint">空行より下がノート</span>
+              <button id="btn-pos-note" class="chip compose-pos" title="挿入位置"></button>
+              <button id="btn-continuous-note" class="chip compose-continuous">連続</button>
               <button id="btn-save-note" class="compose-submit">追加</button>
             </div>
           </div>
@@ -189,11 +192,6 @@ export const MainPage: FC = () => (
               <button class="chip picker-day" data-day="custom">日付…</button>
             </div>
             <input id="picker-date-input" type="date" class="sheet-input-small picker-date hidden" />
-            <div class="picker-section-label">挿入位置</div>
-            <div class="sheet-chip-row" id="picker-pos-chips">
-              <button class="chip picker-pos" data-pos="bottom">末尾</button>
-              <button class="chip picker-pos" data-pos="top">先頭</button>
-            </div>
             <div class="picker-section-label">登録済みの場所</div>
             <div id="picker-places" class="picker-places"></div>
             <div class="picker-section-label">ノードを選ぶ</div>

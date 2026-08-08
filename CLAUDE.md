@@ -110,11 +110,15 @@ npm run test:ui    # vitest UI起動
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/
-  任意日付、挿入位置 先頭/末尾、登録済みの場所、ノードツリー選択）。既定の送信先は表示中の
-  ビューに対応する場所（Tasks/DailyビューはDaily 今日）。挿入位置は`taskflowy_settings`の
-  `composePosition`に保存（既定は末尾）。送信後もシートは開いたまま入力だけ初期化される
-  （連続追加。閉じるのは背景タップ、または空のまま追加）。タスク/ノートのモードは
-  `composeMode`として保存され、次回開いたときに復元される。
+  任意日付、登録済みの場所、ノードツリー選択）。既定の送信先は表示中のビューに対応する場所
+  （Tasks/DailyビューはDaily 今日）。挿入位置はシート本体の軽いトグル（▼ 末尾 / ▲ 先頭。
+  タスクモードは書き込み先ボタン横、ノートモードは下端ツールバー。`togglePosition`/
+  `positionLabel`、`views.js`）で切り替え、`taskflowy_settings`の`composePosition`に保存
+  （既定は末尾）。送信後は既定でシートが閉じる。追加ボタン横の
+  「連続」チップで連続追加モードをONにすると、シートを開いたまま入力だけ初期化して
+  続けて書ける（閉じるのは背景タップ、または空のまま追加）。連続追加はシートを開くたび
+  OFFに戻る一時的なモードで永続化しない（`afterSendAction`、`views.js`）。タスク/ノートの
+  モードは`composeMode`として保存され、次回開いたときに復元される。
   ノートは最初の空行でname/noteに分割（`splitNoteDraft`）。「書き込み先の日付」と「期限」は
   別概念で、日付を指定するUIをそれぞれ1か所に限定している
 - **書き込み先**: `POST /api/send`。`targetType: "node" | "calendar"`。`calendar`は`day`キー

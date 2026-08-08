@@ -20,7 +20,10 @@ import {
   visibleDailyGroups,
   composeDestForView,
   initialComposeMode,
+  afterSendAction,
   normalizePosition,
+  togglePosition,
+  positionLabel,
   dayPhrase,
   destLabel,
   destSendTarget,
@@ -301,11 +304,29 @@ describe("compose destination", () => {
     expect(initialComposeMode("weird")).toBe("task");
   });
 
+  it("continues after send only when 連続追加 is on (off closes the sheet)", () => {
+    expect(afterSendAction(true)).toBe("continue");
+    expect(afterSendAction(false)).toBe("close");
+    expect(afterSendAction(undefined)).toBe("close");
+  });
+
   it("normalizes the insert position, defaulting to bottom", () => {
     expect(normalizePosition("top")).toBe("top");
     expect(normalizePosition("bottom")).toBe("bottom");
     expect(normalizePosition(undefined)).toBe("bottom");
     expect(normalizePosition("weird")).toBe("bottom");
+  });
+
+  it("flips the insert position toggle", () => {
+    expect(togglePosition("bottom")).toBe("top");
+    expect(togglePosition("top")).toBe("bottom");
+    expect(togglePosition(undefined)).toBe("top"); // unset = bottom → top
+  });
+
+  it("labels the insert position toggle", () => {
+    expect(positionLabel("bottom")).toBe("▼ 末尾");
+    expect(positionLabel("top")).toBe("▲ 先頭");
+    expect(positionLabel(undefined)).toBe("▼ 末尾");
   });
 
   it("resolves destinations to send targets with explicit local dates", () => {

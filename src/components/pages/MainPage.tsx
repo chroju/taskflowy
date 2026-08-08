@@ -249,21 +249,15 @@ export const MainPage: FC = () => (
         </section>
 
         <section class="card">
-          <div class="card-title">保存先</div>
-          <div id="destination-list" class="destination-list"></div>
-          <button id="btn-add-destination" class="btn-dashed">＋ 保存先を追加</button>
+          <div class="card-row space-between">
+            <div class="card-title">場所</div>
+            <span id="place-count" class="place-count"></span>
+          </div>
+          <p class="card-desc">書き込み先とビューの並び順を管理します。眼のアイコンでビューへの表示を切り替えます。</p>
+          <div id="place-list" class="place-list"></div>
+          <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
 
           <div id="panel-add-destination" class="dest-panel hidden">
-            <div class="radio-group" id="dest-type-group">
-              <label>
-                <input type="radio" name="dest-type" value="node" checked />
-                ノード
-              </label>
-              <label>
-                <input type="radio" name="dest-type" value="calendar" />
-                カレンダー（Daily Note）
-              </label>
-            </div>
             <div id="node-tree" class="node-tree">
               <p class="tree-empty">読み込み中...</p>
             </div>

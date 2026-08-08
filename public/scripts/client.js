@@ -33,6 +33,9 @@ import {
   destLabel,
   destSendTarget,
   splitNoteDraft,
+  toggleInView,
+  movePlace,
+  reorderPlaces,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -152,12 +155,12 @@ const reminderHoursEl = $("reminder-hours");
 const btnTestNotification = $("btn-test-notification");
 const syncLabel = $("sync-label");
 const btnSyncNow = $("btn-sync-now");
-const destinationList = $("destination-list");
+const placeList = $("place-list");
+const placeCount = $("place-count");
 const btnAddDestination = $("btn-add-destination");
 const panelAddDest = $("panel-add-destination");
 const nodeTree = $("node-tree");
 const destNameInput = $("dest-name-input");
-const destTypeRadios = document.querySelectorAll('input[name="dest-type"]');
 const btnSaveDestination = $("btn-save-destination");
 const btnCancelDestination = $("btn-cancel-destination");
 
@@ -1678,7 +1681,7 @@ async function snoozeSheetTask(option) {
 function openSettings() {
   settingsDate.textContent = formatHeaderDate();
   updateApiKeyUI();
-  renderDestinationList();
+  renderPlaceList();
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
@@ -1754,16 +1757,12 @@ function bindSettingsEvents() {
   btnAddDestination.addEventListener("click", () => {
     panelAddDest.classList.remove("hidden");
     selectedTreeNodeId = null;
+    settingsTreeRefPath = "";
     destNameInput.value = "";
-    setDestType("node");
     settingsNodeTree.reset();
   });
 
-  destTypeRadios.forEach((radio) => {
-    radio.addEventListener("change", () => updateDestTypeUI(getDestType()));
-  });
-
-  btnSaveDestination.addEventListener("click", saveDestination);
+  btnSaveDestination.addEventListener("click", savePlace);
   btnCancelDestination.addEventListener("click", () => panelAddDest.classList.add("hidden"));
 }
 
@@ -1771,96 +1770,173 @@ function renderSyncLabel() {
   syncLabel.textContent = formatSyncAgo(Date.now(), lastSyncMs);
 }
 
-// ==================== Destinations ====================
+// ==================== Settings 場所カード ====================
 
-// Destination naming (calendar destinations get a marker icon)
-const calendarTypeIcon = `<svg class="dest-type-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="3" y="4" width="18" height="18" rx="2" />
-  <line x1="16" y1="2" x2="16" y2="6" />
-  <line x1="8" y1="2" x2="8" y2="6" />
-  <line x1="3" y1="10" x2="21" y2="10" />
-</svg>`;
+const ICON_GRIP = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>`;
+const ICON_EYE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></svg>`;
+const ICON_EYE_OFF = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
 
-function destinationNameHtml(dest) {
-  return `${dest.type === "calendar" ? calendarTypeIcon : ""}${escapeText(dest.name)}`;
+function renderPlaceList() {
+  placeCount.textContent = String(settings.places.length);
+  placeList.innerHTML = "";
+
+  for (const place of settings.places) {
+    const builtin = place.kind !== "node";
+    const row = document.createElement("div");
+    row.className = "place-row";
+    row.dataset.placeId = place.id;
+    row.innerHTML =
+      `<button class="place-grip" title="並べ替え（⌥↑ / ⌥↓）">${ICON_GRIP}</button>` +
+      '<div class="place-info">' +
+      '<div class="place-name"><span class="place-name-text"></span>' +
+      (builtin ? '<span class="place-badge">組み込み</span>' : "") +
+      "</div>" +
+      '<div class="place-ref hidden"></div>' +
+      "</div>" +
+      '<button class="place-eye" title="ビューへの表示を切り替え"></button>' +
+      (builtin ? "" : `<button class="place-delete" title="削除">${ICON_TRASH}</button>`);
+
+    row.querySelector(".place-name-text").textContent = place.name;
+    if (place.refPath) {
+      const ref = row.querySelector(".place-ref");
+      ref.textContent = place.refPath;
+      ref.classList.remove("hidden");
+    }
+
+    const eye = row.querySelector(".place-eye");
+    eye.innerHTML = place.inView ? ICON_EYE : ICON_EYE_OFF;
+    eye.classList.toggle("off", !place.inView);
+    eye.addEventListener("click", () => togglePlaceView(place.id));
+
+    const del = row.querySelector(".place-delete");
+    if (del) del.addEventListener("click", () => deletePlace(place.id));
+
+    bindPlaceReorder(row);
+    placeList.appendChild(row);
+  }
 }
 
-function renderDestinationList() {
-  destinationList.innerHTML = "";
-  if (!settings.destinations.length) {
-    destinationList.innerHTML = '<p class="destination-empty">未設定</p>';
+function togglePlaceView(id) {
+  const next = toggleInView(settings.places, id);
+  if (!next) {
+    showToast("最後のビューは非表示にできません", true);
     return;
   }
-  for (const dest of settings.destinations) {
-    const isActive = dest.id === settings.selectedDestinationId;
-    const div = document.createElement("div");
-    div.className = "destination-item" + (isActive ? " active" : "");
-    div.innerHTML = `
-      <span class="destination-item-name">${destinationNameHtml(dest)}</span>
-      <button class="destination-item-delete" title="削除">&times;</button>
-    `;
-    div.addEventListener("click", (e) => {
-      if (e.target.closest(".destination-item-delete")) return;
-      settings.selectedDestinationId = dest.id;
-      saveSettings();
-      renderDestinationList();
-    });
-    div.querySelector(".destination-item-delete").addEventListener("click", (e) => {
-      e.stopPropagation();
-      settings.destinations = settings.destinations.filter((d) => d.id !== dest.id);
-      if (settings.selectedDestinationId === dest.id) {
-        settings.selectedDestinationId = settings.destinations[0]?.id || "";
-      }
-      saveSettings();
-      renderDestinationList();
-    });
-    destinationList.appendChild(div);
+  settings.places = next;
+  saveSettings();
+  renderPlaceList();
+  // 表示中のビューを OFF にした場合は先頭の表示中ビューへ自動的に移動する
+  const ensured = ensureVisibleView(settings.places, view);
+  if (ensured !== view) switchView(ensured);
+  else render();
+}
+
+function deletePlace(id) {
+  const place = settings.places.find((p) => p.id === id);
+  if (!place || place.kind !== "node") return; // 組み込みの Tasks / Daily は削除不可
+  settings.places = settings.places.filter((p) => p.id !== id);
+  if (settings.lastDest && settings.lastDest.kind === "place" && settings.lastDest.placeId === id) {
+    settings.lastDest = null;
   }
+  saveSettings();
+  saveNodeViewsCache(); // 削除した場所のビューキャッシュを落とす
+  renderPlaceList();
+  const ensured = ensureVisibleView(settings.places, view);
+  if (ensured !== view) switchView(ensured);
+  else render();
+  showToast("場所を削除しました");
 }
 
-function getDestType() {
-  return document.querySelector('input[name="dest-type"]:checked')?.value || "node";
-}
+// ドラッグ&ドロップで並べ替え（確定時にのみ保存）。キーボードは ⌥↑ / ⌥↓。
+function bindPlaceReorder(row) {
+  const grip = row.querySelector(".place-grip");
 
-function setDestType(type) {
-  destTypeRadios.forEach((radio) => {
-    radio.checked = radio.value === type;
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try {
+      grip.setPointerCapture(e.pointerId);
+    } catch {}
+    row.classList.add("dragging");
+    placeList.classList.add("reordering");
+
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      for (const other of placeList.querySelectorAll(".place-row")) {
+        if (other === row) continue;
+        const rect = other.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const rowIsAfter = !!(other.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (ev.clientY < mid && rowIsAfter) {
+          placeList.insertBefore(row, other);
+          break;
+        }
+        if (ev.clientY > mid && !rowIsAfter) {
+          placeList.insertBefore(row, other.nextSibling);
+          break;
+        }
+      }
+    };
+
+    const finish = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", finish);
+      grip.removeEventListener("pointercancel", finish);
+      row.classList.remove("dragging");
+      placeList.classList.remove("reordering");
+      const ids = [...placeList.querySelectorAll(".place-row")].map((el) => el.dataset.placeId);
+      settings.places = reorderPlaces(settings.places, ids);
+      saveSettings();
+      render(); // ビューバーの並びに即反映
+    };
+
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", finish);
+    grip.addEventListener("pointercancel", finish);
   });
-  updateDestTypeUI(type);
+
+  grip.addEventListener("keydown", (e) => {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const id = row.dataset.placeId;
+    settings.places = movePlace(settings.places, id, e.key === "ArrowUp" ? -1 : 1);
+    saveSettings();
+    renderPlaceList();
+    render();
+    placeList.querySelector(`[data-place-id="${CSS.escape(id)}"] .place-grip`)?.focus();
+  });
 }
 
-function updateDestTypeUI(type) {
-  // Calendar destinations write to Workflowy's native calendar; there is no
-  // node to pick and the name is fixed to "Daily Note"
-  const isCalendar = type === "calendar";
-  nodeTree.classList.toggle("hidden", isCalendar);
-  destNameInput.closest(".input-group").classList.toggle("hidden", isCalendar);
-}
+let settingsTreeRefPath = "";
 
-function saveDestination() {
-  const type = getDestType();
-  if (type === "node" && !selectedTreeNodeId) {
+function savePlace() {
+  if (!selectedTreeNodeId) {
     showToast("ノードを選択してください", true);
     return;
   }
-  const name = type === "calendar" ? "Daily Note" : destNameInput.value.trim();
+  const name = destNameInput.value.trim();
   if (!name) {
     showToast("表示名を入力してください", true);
     return;
   }
 
-  const dest = {
-    id: crypto.randomUUID(),
-    type,
-    nodeId: type === "node" ? selectedTreeNodeId : undefined,
-    name,
-  };
-  settings.destinations.push(dest);
-  settings.selectedDestinationId = dest.id;
+  settings.places = [
+    ...settings.places,
+    {
+      id: crypto.randomUUID(),
+      kind: "node",
+      name,
+      ref: selectedTreeNodeId,
+      refPath: settingsTreeRefPath || undefined,
+      inView: true,
+    },
+  ];
   saveSettings();
-  renderDestinationList();
+  renderPlaceList();
+  render();
   panelAddDest.classList.add("hidden");
-  showToast("保存先を追加しました");
+  showToast("場所を追加しました");
 }
 
 // ==================== Node tree picker ====================
@@ -1993,14 +2069,24 @@ function createNodeTreePicker(container, { onSelect }) {
     get selectedId() {
       return selectedId;
     },
+    get pathNames() {
+      return path.map((c) => c.name);
+    },
   };
 }
 
-// 設定「場所を追加」用: 選択で表示名の初期値も埋める
+// 設定「場所を追加」用: 選択で表示名の初期値と参照先パスも埋める
 const settingsNodeTree = createNodeTreePicker(nodeTree, {
   onSelect: (sel) => {
     selectedTreeNodeId = sel ? sel.id : null;
     destNameInput.value = sel ? sel.name : "";
+    if (sel) {
+      const names = settingsNodeTree.pathNames;
+      const full = names[names.length - 1] === sel.name ? names : [...names, sel.name];
+      settingsTreeRefPath = full.join(" / ");
+    } else {
+      settingsTreeRefPath = "";
+    }
   },
 });
 

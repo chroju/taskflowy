@@ -5,6 +5,7 @@ export interface Place {
   kind: PlaceKind;
   name: string;
   ref?: string;
+  refPath?: string;
   inView: boolean;
 }
 

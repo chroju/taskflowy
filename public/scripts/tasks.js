@@ -303,16 +303,20 @@ export function swipeDirection(dx, dy, threshold = 10) {
 
 // Given a horizontal drag distance and a commit threshold (px), determines
 // whether the drag commits to "complete" (right swipe), "delete" (left
-// swipe), or null (snap back).
-export function resolveSwipeAction(dx, threshold = 72) {
-  if (dx >= threshold) return "complete";
+// swipe), or null (snap back). deleteOnly drops the complete direction for
+// rows that have no completed state (the Daily date headings).
+export function resolveSwipeAction(dx, { threshold = 72, deleteOnly = false } = {}) {
   if (dx <= -threshold) return "delete";
+  if (!deleteOnly && dx >= threshold) return "complete";
   return null;
 }
 
 // Drag distance is clamped so the row never travels further than ±130px.
-export function clampDx(dx, max = 130) {
-  return Math.max(-max, Math.min(max, dx));
+// A delete-only row does not travel rightward at all, so the disabled
+// direction reads as inert rather than as a gesture that failed to commit.
+export function clampDx(dx, { max = 130, deleteOnly = false } = {}) {
+  const clamped = Math.max(-max, Math.min(max, dx));
+  return deleteOnly ? Math.min(0, clamped) : clamped;
 }
 
 // ---- Due shortcuts ----

@@ -123,12 +123,30 @@ export function resolveBarStep(dx, threshold = 44) {
 // ---- Daily view ----
 
 const EN_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const JP_WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+function weekdayIndex(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
 
 // Date heading label: "8/8 Sat" (monospace in the UI).
 export function dailyDateLabel(dateStr) {
+  const [, m, d] = dateStr.split("-").map(Number);
+  return `${m}/${d} ${EN_WEEKDAYS[weekdayIndex(dateStr)]}`;
+}
+
+// The date heading is a band: the date, then the weekday as its own badge,
+// so the two can be styled apart (the badge inverts on today).
+export function dailyDateParts(dateStr) {
+  const [, m, d] = dateStr.split("-").map(Number);
+  return { date: `${m}/${d}`, weekday: EN_WEEKDAYS[weekdayIndex(dateStr)] };
+}
+
+// Title of the daily-note detail sheet: "2026/8/8（土）".
+export function dailyNoteTitle(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const weekday = EN_WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  return `${m}/${d} ${weekday}`;
+  return `${y}/${m}/${d}（${JP_WEEKDAYS[weekdayIndex(dateStr)]}）`;
 }
 
 // Header count: "6 件 / 3 日".

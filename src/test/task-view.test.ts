@@ -514,6 +514,16 @@ describe("resolveSwipeAction", () => {
     expect(resolveSwipeAction(50)).toBeNull();
     expect(resolveSwipeAction(-50)).toBeNull();
   });
+
+  // 日付ノードには完了の概念がないので、右スワイプを持たない行がある
+  it("never completes when the row is delete-only", () => {
+    expect(resolveSwipeAction(73, { deleteOnly: true })).toBeNull();
+    expect(resolveSwipeAction(-73, { deleteOnly: true })).toBe("delete");
+  });
+
+  it("still honours a custom threshold", () => {
+    expect(resolveSwipeAction(50, { threshold: 40 })).toBe("complete");
+  });
 });
 
 describe("clampDx", () => {
@@ -521,6 +531,13 @@ describe("clampDx", () => {
     expect(clampDx(200)).toBe(130);
     expect(clampDx(-200)).toBe(-130);
     expect(clampDx(42)).toBe(42);
+  });
+
+  // 右スワイプ無効の行は、右方向へ引っぱっても動かさない
+  it("blocks rightward travel when the row is delete-only", () => {
+    expect(clampDx(200, { deleteOnly: true })).toBe(0);
+    expect(clampDx(42, { deleteOnly: true })).toBe(0);
+    expect(clampDx(-200, { deleteOnly: true })).toBe(-130);
   });
 });
 

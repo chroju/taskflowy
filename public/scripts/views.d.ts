@@ -35,6 +35,8 @@ export function stepView(places: Place[], view: string, dir: number): string;
 export function resolveBarStep(dx: number, threshold?: number): -1 | 0 | 1;
 
 export function dailyDateLabel(dateStr: string): string;
+export function dailyDateParts(dateStr: string): { date: string; weekday: string };
+export function dailyNoteTitle(dateStr: string): string;
 export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: number };
 export function itemTimeLabel(createdAt: number): string;
 

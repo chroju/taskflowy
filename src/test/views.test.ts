@@ -10,6 +10,8 @@ import {
   stepView,
   resolveBarStep,
   dailyDateLabel,
+  dailyDateParts,
+  dailyNoteTitle,
   dailyCounts,
   itemTimeLabel,
   splitNoteDraft,
@@ -151,6 +153,16 @@ describe("Daily view helpers", () => {
   it("formats the date heading", () => {
     expect(dailyDateLabel("2026-08-08")).toBe("8/8 Sat");
     expect(dailyDateLabel("2026-12-01")).toBe("12/1 Tue");
+  });
+
+  it("splits the date heading into a date and a weekday badge", () => {
+    expect(dailyDateParts("2026-08-08")).toEqual({ date: "8/8", weekday: "Sat" });
+    expect(dailyDateParts("2026-12-01")).toEqual({ date: "12/1", weekday: "Tue" });
+  });
+
+  it("titles the daily-note sheet with the Japanese weekday", () => {
+    expect(dailyNoteTitle("2026-08-08")).toBe("2026/8/8（土）");
+    expect(dailyNoteTitle("2026-12-01")).toBe("2026/12/1（火）");
   });
 
   it("counts items and days for the header", () => {

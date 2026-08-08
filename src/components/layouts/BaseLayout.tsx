@@ -14,7 +14,7 @@ export const BaseLayout: FC<PropsWithChildren<{ title?: string }>> = ({ children
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
       />
       <link rel="stylesheet" href="/styles/main.css" />
     </head>

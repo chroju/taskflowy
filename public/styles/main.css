@@ -20,8 +20,14 @@
   --overlay-bg: rgba(12, 13, 16, 0.74);      /* シート背景オーバーレイ */
   --row-hover: #2a2d34;
 
-  --font-sans: Barlow, "Hiragino Sans", system-ui, sans-serif;
-  --font-cond: "Barlow Condensed", "Hiragino Sans", system-ui, sans-serif;
+  /* 日本語を含む全 UI テキストを Zen Kaku Gothic New に統一する。Barlow 単体では
+     日本語がシステムフォントに落ちて字面・ウェイトが噛み合わなかった。
+     本文（--font-sans）と見出し（--font-cond）で同じ書体を使い、差はサイズと
+     ウェイトで付ける。数値・時刻・日付だけは桁を揃えるため mono のまま。
+     Zen Kaku Gothic New は 600 を持たない（300/400/500/700/900）ので、
+     見出しの「600」は 700 に丸める。 */
+  --font-sans: "Zen Kaku Gothic New", system-ui, sans-serif;
+  --font-cond: "Zen Kaku Gothic New", system-ui, sans-serif;
   --font-mono: ui-monospace, Menlo, Consolas, monospace;
 }
 
@@ -38,6 +44,8 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
+  /* 日本語では 400 が細く見えるため既定を一段上げる */
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -89,7 +97,7 @@ button {
 }
 
 .header h1 {
-  font: 600 34px/1.1 var(--font-cond);
+  font: 700 38px/1.15 var(--font-cond);
   color: var(--text);
   text-wrap: pretty;
 }
@@ -191,7 +199,7 @@ button {
 }
 
 .group-header .group-label {
-  font: 500 14px/1.35 var(--font-sans);
+  font: 700 15px/1.35 var(--font-sans);
   color: var(--subtext1);
 }
 
@@ -323,7 +331,7 @@ button {
 }
 
 .task-title {
-  font: 400 17px/1.45 var(--font-sans);
+  font: 600 17px/1.45 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
   word-break: break-word;
@@ -572,16 +580,18 @@ button {
 }
 
 .memo-name {
-  font: 400 16px/1.55 var(--font-sans);
+  font: 600 17px/1.5 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
   word-break: break-word;
 }
 
+/* 本文を上げるだけでなくノートを下げて比を稼ぐ。色も一段落として、
+   本文とノートを取り違えないようにする。 */
 .memo-note {
   margin-top: 6px;
-  font: 400 14px/1.65 var(--font-sans);
-  color: var(--subtext1);
+  font: 400 13px/1.7 var(--font-sans);
+  color: var(--subtext0);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -691,7 +701,7 @@ button {
 }
 
 .sheet-title {
-  font: 400 19px/1.45 var(--font-sans);
+  font: 600 21px/1.4 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
 }
@@ -704,7 +714,7 @@ button {
 }
 
 .sheet-title.memo {
-  font: 400 21px/1.5 var(--font-sans);
+  font: 600 24px/1.4 var(--font-sans);
 }
 
 .sheet-note-face {
@@ -712,8 +722,8 @@ button {
   padding: 15px 16px;
   border-radius: 12px;
   background: var(--base);
-  font: 400 16px/1.85 var(--font-sans);
-  color: var(--text);
+  font: 400 14.5px/1.85 var(--font-sans);
+  color: var(--subtext1);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 280px;

@@ -247,6 +247,23 @@ describe("groupTasksForView (today)", () => {
     const groups = groupTasksForView(tasks, "today", TODAY);
     expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日"]);
   });
+
+  it("appends a 完了 group when showCompleted is true", () => {
+    const tasks = [
+      task({ id: "td", due: { date: "2026-08-01", time: null } }),
+      task({ id: "dn", due: { date: "2026-08-01", time: null }, completed: true }),
+      task({ id: "dod", due: { date: "2026-07-25", time: null }, completed: true }),
+    ];
+    const groups = groupTasksForView(tasks, "today", TODAY, true);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日", "完了"]);
+    expect(groups[1].tasks.map((t: { id: string }) => t.id)).toEqual(["dod", "dn"]);
+  });
+
+  it("keeps completed tasks outside the view's sections out of the 完了 group", () => {
+    // Due tomorrow: not part of the Today view even when completed.
+    const tasks = [task({ id: "tm", due: { date: "2026-08-02", time: null }, completed: true })];
+    expect(groupTasksForView(tasks, "today", TODAY, true)).toEqual([]);
+  });
 });
 
 describe("groupTasksForView (due)", () => {
@@ -277,6 +294,17 @@ describe("groupTasksForView (due)", () => {
     ];
     const groups = groupTasksForView(tasks, "due", TODAY);
     expect(groups[0].tasks.map((t: { id: string }) => t.id)).toEqual(["a", "b"]);
+  });
+
+  it("appends a 完了 group covering every completed task (no-due included) when showCompleted is true", () => {
+    const tasks = [
+      task({ id: "open", due: { date: "2026-08-01", time: null } }),
+      task({ id: "dn1", due: { date: "2026-08-02", time: null }, completed: true }),
+      task({ id: "dn2", due: null, completed: true }),
+    ];
+    const groups = groupTasksForView(tasks, "due", TODAY, true);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日", "完了"]);
+    expect(groups[1].tasks.map((t: { id: string }) => t.id)).toEqual(["dn1", "dn2"]);
   });
 });
 

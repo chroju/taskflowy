@@ -140,19 +140,23 @@ const VIEW_SECTIONS = {
   due: ["overdue", "today", "tomorrow", "thisWeek", "later", "noDue"],
 };
 
-// Groups incomplete tasks for the Today / Deadlines views, returning an
-// ordered array of { key, label, overdue, tasks }. Empty sections are
-// omitted. The Today view shows overdue and today only.
-export function groupTasksForView(tasks, view, todayStr = localDateString()) {
+// Groups tasks for the Today / Deadlines views, returning an ordered array
+// of { key, label, overdue, tasks }. Empty sections are omitted. The Today
+// view shows overdue and today only. Completed tasks are excluded unless
+// showCompleted, in which case those belonging to the view's sections form
+// a trailing 完了 group.
+export function groupTasksForView(tasks, view, todayStr = localDateString(), showCompleted = false) {
   const sections = VIEW_SECTIONS[view] || VIEW_SECTIONS.due;
   const buckets = {};
+  const done = [];
   for (const key of sections) buckets[key] = [];
   for (const task of tasks) {
-    if (task.completed) continue;
     const key = classifyDue(task.due, todayStr);
-    if (buckets[key]) buckets[key].push(task);
+    if (!buckets[key]) continue; // outside this view's sections
+    if (task.completed) done.push(task);
+    else buckets[key].push(task);
   }
-  return sections
+  const groups = sections
     .filter((key) => buckets[key].length > 0)
     .map((key) => ({
       key,
@@ -160,6 +164,10 @@ export function groupTasksForView(tasks, view, todayStr = localDateString()) {
       overdue: key === "overdue",
       tasks: buckets[key].slice().sort(compareDue),
     }));
+  if (showCompleted && done.length > 0) {
+    groups.push({ key: "done", label: "完了", overdue: false, tasks: done.slice().sort(compareDue) });
+  }
+  return groups;
 }
 
 // ---- Grouping: nodes ----

@@ -712,11 +712,17 @@ function renderList(node) {
 
   const today = localDateString();
   const showCompleted = settings.showCompletedTasks === true;
-  const groups = node ? groupNodeTasks(node.tasks, showCompleted) : groupTasksForView(tasksState, tab, today);
+  const groups = node
+    ? groupNodeTasks(node.tasks, showCompleted)
+    : groupTasksForView(tasksState, tab, today, showCompleted);
   const openCount = groups.reduce((n, g) => n + g.tasks.filter((t) => !t.completed).length, 0);
   screenCount.textContent = `${openCount} 件`;
 
-  if (node && node.done > 0) taskList.appendChild(buildCompletedToggle(node.done));
+  // このビューに属する完了済みタスクの数（非表示中でもボタンの件数に出す）
+  const completedCount = node
+    ? node.done
+    : (groupTasksForView(tasksState, tab, today, true).find((g) => g.key === "done")?.tasks.length ?? 0);
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
 
   if (!groups.length) {
     const empty = document.createElement("p");

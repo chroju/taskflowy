@@ -45,7 +45,8 @@ export function compareDue(a: { due?: TaskDue | null }, b: { due?: TaskDue | nul
 export function groupTasksForView<T extends TaskLike>(
   tasks: T[],
   view: "today" | "due",
-  todayStr?: string
+  todayStr?: string,
+  showCompleted?: boolean
 ): TaskGroup<T>[];
 
 export function summarizeNodes<T extends TaskLike>(tasks: T[], todayStr?: string): NodeSummary<T>[];

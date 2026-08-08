@@ -66,6 +66,8 @@ export interface ViewItemLike {
 export function filterCompletedItems<T extends ViewItemLike>(items: T[], showCompleted: boolean): T[];
 export function visibleDailyGroups<G extends DailyGroupLike>(groups: G[], showCompleted: boolean): G[];
 
+export function layoutActionLabel(todo: boolean): string;
+
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";

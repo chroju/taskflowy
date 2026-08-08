@@ -49,7 +49,17 @@ export const MainPage: FC = () => (
         <div class="sheet-grabber"></div>
         {/* メモのみ: 時刻 · 場所 */}
         <div id="sheet-item-meta" class="sheet-item-meta hidden"></div>
-        <div id="sheet-task-title" class="sheet-title"></div>
+        <div id="sheet-task-title" class="sheet-title" title="タイトルを編集"></div>
+
+        {/* タイトルエディタ（タイトルタップで開閉） */}
+        <div id="sheet-title-editor" class="sheet-editor hidden">
+          <textarea id="sheet-title-input" class="sheet-textarea" rows={2} placeholder="タイトル"></textarea>
+          <div class="sheet-custom-row">
+            <button id="btn-sheet-cancel-title" class="btn-outline">キャンセル</button>
+            <button id="btn-sheet-save-title" class="chip-submit">保存</button>
+          </div>
+        </div>
+
         <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
           <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
@@ -96,6 +106,7 @@ export const MainPage: FC = () => (
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
           </button>
+          <button id="btn-sheet-layout" class="sheet-action">メモにする</button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
         </div>

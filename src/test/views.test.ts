@@ -29,6 +29,7 @@ import {
   dayPhrase,
   destLabel,
   destSendTarget,
+  layoutActionLabel,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -360,5 +361,15 @@ describe("compose destination", () => {
       targetType: "node",
       parentId: "n9",
     });
+  });
+});
+
+describe("layoutActionLabel", () => {
+  it("offers the note side for a todo", () => {
+    expect(layoutActionLabel(true)).toBe("メモにする");
+  });
+
+  it("offers the todo side for a note", () => {
+    expect(layoutActionLabel(false)).toBe("タスクにする");
   });
 });

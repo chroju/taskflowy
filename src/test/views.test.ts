@@ -22,6 +22,8 @@ import {
   initialComposeMode,
   afterSendAction,
   normalizePosition,
+  togglePosition,
+  positionLabel,
   dayPhrase,
   destLabel,
   destSendTarget,
@@ -313,6 +315,18 @@ describe("compose destination", () => {
     expect(normalizePosition("bottom")).toBe("bottom");
     expect(normalizePosition(undefined)).toBe("bottom");
     expect(normalizePosition("weird")).toBe("bottom");
+  });
+
+  it("flips the insert position toggle", () => {
+    expect(togglePosition("bottom")).toBe("top");
+    expect(togglePosition("top")).toBe("bottom");
+    expect(togglePosition(undefined)).toBe("top"); // unset = bottom → top
+  });
+
+  it("labels the insert position toggle", () => {
+    expect(positionLabel("bottom")).toBe("▼ 末尾");
+    expect(positionLabel("top")).toBe("▲ 先頭");
+    expect(positionLabel(undefined)).toBe("▼ 末尾");
   });
 
   it("resolves destinations to send targets with explicit local dates", () => {

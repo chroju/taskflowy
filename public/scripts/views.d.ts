@@ -67,6 +67,8 @@ export function visibleDailyGroups<G extends DailyGroupLike>(groups: G[], showCo
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";
+export function togglePosition(value: unknown): "top" | "bottom";
+export function positionLabel(value: unknown): string;
 export function initialComposeMode(saved: unknown): "task" | "note";
 export function afterSendAction(continuous: unknown): "continue" | "close";
 export function dayPhrase(day: string | null, todayStr?: string): string;

@@ -40,6 +40,8 @@ import {
   initialComposeMode,
   afterSendAction,
   normalizePosition,
+  togglePosition,
+  positionLabel,
   destLabel,
   destSendTarget,
   splitNoteDraft,
@@ -144,7 +146,8 @@ const composePicker = $("compose-picker");
 const btnPickerDone = $("btn-picker-done");
 const pickerDailyChips = $("picker-daily-chips");
 const pickerDateInput = $("picker-date-input");
-const pickerPosChips = $("picker-pos-chips");
+const btnPosTask = $("btn-pos-task");
+const btnPosNote = $("btn-pos-note");
 const pickerPlaces = $("picker-places");
 const pickerNodeTree = $("picker-node-tree");
 
@@ -1459,6 +1462,10 @@ function renderCompose() {
 
   btnContinuousTask.classList.toggle("active", composeContinuous);
   btnContinuousNote.classList.toggle("active", composeContinuous);
+
+  const posLabel = positionLabel(settings.composePosition);
+  btnPosTask.textContent = posLabel;
+  btnPosNote.textContent = posLabel;
 }
 
 function renderDueChips() {
@@ -1516,10 +1523,6 @@ function renderPicker() {
   pickerDateInput.classList.toggle("hidden", !(dayValue !== null && pickerCustomDay));
   if (dayValue !== null && pickerCustomDay) pickerDateInput.value = dayValue;
 
-  const pos = normalizePosition(settings.composePosition);
-  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
-    chip.classList.toggle("active", chip.dataset.pos === pos);
-  });
 
   pickerPlaces.innerHTML = "";
   const nodePlaces = settings.places.filter((p) => p.kind === "node");
@@ -1746,6 +1749,15 @@ function bindEvents() {
     });
   }
 
+  // 挿入位置トグル（▼ 末尾 / ▲ 先頭）。設定として永続化する
+  for (const btn of [btnPosTask, btnPosNote]) {
+    btn.addEventListener("click", () => {
+      settings.composePosition = togglePosition(settings.composePosition);
+      saveSettings();
+      renderCompose();
+    });
+  }
+
   btnSaveTask.addEventListener("click", handleAddTask);
   taskNameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -1792,13 +1804,6 @@ function bindEvents() {
     }
   });
 
-  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      settings.composePosition = chip.dataset.pos;
-      saveSettings();
-      renderPicker();
-    });
-  });
 
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
 

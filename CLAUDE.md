@@ -81,11 +81,27 @@ npm run test:ui    # vitest UI起動
 - **Nodesタブのフィルタ**: TODOがすべて完了したノードはデフォルトで非表示。一覧右上のボタンで
   表示/非表示を切り替え、状態は`taskflowy_settings`の`showFinishedNodes`に保存する。
   判定は`filterFinishedNodes`（純粋関数）。TODOを1件も持たないノードは非表示の対象外
+- **完了タスクの表示トグル**: 全ビュー（Today/Deadlinesタブ・Nodesドリルダウン・Daily・
+  登録ノードビュー）で完了済みタスクをデフォルト非表示にし、一覧上部のボタンで表示/非表示を
+  切り替える。状態はビュー/タブごとに独立で、`taskflowy_settings`の`showCompletedTasks`に
+  スコープ（`today`/`due`/`nodes`/`daily`/場所id）をキーとするマップとして保存
+  （`showCompletedFor`/`toggleShowCompleted`、`views.js`）。Today/Deadlinesでは表示ON時に
+  末尾へ「完了」グループを追加する。Todayは「期限が今日 or 今日完了にしたもの」のみ、
+  Deadlinesは全完了タスクを完了日（`completedAt`、無ければ期限で代用）の降順で直近7日分から
+  表示し、スクロール下端で7日ずつ拡張する（Daily同様。完了が無い週はスキップ。純粋ロジックは
+  `completedTasksForDueView`/`completedDateOf`/`countCompletedForView`、`tasks.js`）。
+  メモ（非タスク）は常に表示。ほかの純粋ロジックは
+  `filterCompletedItems`/`visibleDailyGroups`（`views.js`）と`groupNodeTasks`の第2引数（`tasks.js`）
 - **Dailyビュー**: `GET /api/daily`が日付キーのプローブ（`GET /nodes?parent_id=YYYY-MM-DD`、
   404=その日なし）で日付グループを返す。新しい日付が上、下方向へ無限スクロール
   （`before_date`でページング）。ノート0件の日は見出しごと出さない
 - **登録ノードビュー**: `GET /api/nodes/:id/children`で子（1階層）をWorkflowyの並び順のまま表示。
   タスクとメモが混在し、タスクは本文下のTODO/DONEタグだけで示す（タグタップで完了トグル）
+- **戻るボタン**: History APIと統合。レイヤー（シート/設定/ドリルダウン）を開くとき番兵の
+  履歴エントリを1つ積み、popstateで最前面のレイヤーを1つ閉じる（残りがあれば積み直す）。
+  閉じる順は`topUiLayer`（`views.js`の純粋関数）: 削除確認 > 送信先ピッカー > 詳細シート >
+  composeシート > 設定 > ドリルダウン。UIの閉じるボタン/背景タップは`history.back()`に流して
+  同期し、何も開いていないときの戻るだけがアプリを出る
 - **行操作（全ビュー統一）**: 右スワイプ=完了トグル、左スワイプ=削除（確認シートを挟んで
   `DELETE /api/nodes/:id`）、行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。
   詳細シートはタスク/メモでレイアウトを分ける（メモは時刻·場所+note面の読み物レイアウト）。
@@ -94,18 +110,25 @@ npm run test:ui    # vitest UI起動
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/
-  任意日付、登録済みの場所、ノードツリー選択）。既定の送信先は表示中のビューに対応する場所。
+  任意日付、挿入位置 先頭/末尾、登録済みの場所、ノードツリー選択）。既定の送信先は表示中の
+  ビューに対応する場所（Tasks/DailyビューはDaily 今日）。挿入位置は`taskflowy_settings`の
+  `composePosition`に保存（既定は末尾）。送信後もシートは開いたまま入力だけ初期化される
+  （連続追加。閉じるのは背景タップ、または空のまま追加）。タスク/ノートのモードは
+  `composeMode`として保存され、次回開いたときに復元される。
   ノートは最初の空行でname/noteに分割（`splitNoteDraft`）。「書き込み先の日付」と「期限」は
   別概念で、日付を指定するUIをそれぞれ1か所に限定している
 - **書き込み先**: `POST /api/send`。`targetType: "node" | "calendar"`。`calendar`は`day`キー
   （`today`/`tomorrow`/`next_week`/`YYYY-MM-DD`）を受け、Day NodeはWF側でオンデマンド作成。
+  `position: "top" | "bottom"`（任意）で親ノード内の挿入位置を指定できる。
   クライアントは常にローカル日付を明示して送る（サーバーTZに依存しない）
 - **通知**: 自前Web Push（VAPID）+ Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）。
-  時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）、日付のみのタスクは
-  朝`morningHour`（KV設定、デフォルト9）JSTにその日が期日のタスクをまとめて1通知。
-  過去24時間より前に期日を迎えた分は初回導入時の大量通知を避けるため送信せず
-  「通知済み」として記録するのみ。判定ロジックは`selectDueNotifications`（純粋関数、
-  `src/test/notify.test.ts`にテストあり）
+  時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）。朝`morningHour`
+  （KV設定、デフォルト9）JSTのまとめ通知は「その日が期日のタスク」+「期日を過ぎても
+  未完了のタスク（期限切れセクション。キーが`overdue:<今日>:<taskId>`のため、完了/期限変更
+  されるまで毎朝繰り返す）」を1通知に束ねる。期限切れのみでも発火する。時刻付きタスクの
+  個別通知だけは、期日から24時間より古い分を初回導入時の通知バーストを避けるため送信せず
+  「通知済み」として記録する（まとめ通知側には出る）。判定ロジックは
+  `selectDueNotifications`（純粋関数、`src/test/notify.test.ts`にテストあり）
 
 ## Environment Variables (wrangler.toml)
 

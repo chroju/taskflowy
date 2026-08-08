@@ -143,6 +143,55 @@ export function itemTimeLabel(createdAt) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// ---- Back-button layers ----
+
+// Which open UI layer the back gesture should close first. Sheets stack over
+// screens: delete confirmation > compose's destination picker > detail
+// sheet > compose sheet > settings > node drilldown. Returns null when
+// nothing is open, i.e. back may leave the app.
+export function topUiLayer({ deleteOpen, pickerOpen, detailOpen, composeOpen, settingsOpen, drilldown }) {
+  if (deleteOpen) return "delete";
+  if (pickerOpen) return "picker";
+  if (detailOpen) return "detail";
+  if (composeOpen) return "compose";
+  if (settingsOpen) return "settings";
+  if (drilldown) return "drilldown";
+  return null;
+}
+
+// ---- Per-view showCompleted state ----
+
+// The completed-tasks toggle is independent per view/tab: state is a map
+// keyed by scope ('today' | 'due' | 'nodes' | 'daily' | <place id>). A
+// legacy boolean (from the short-lived shared setting) reads as all-off.
+
+export function showCompletedFor(state, scope) {
+  return !!(state && typeof state === "object" && state[scope]);
+}
+
+export function toggleShowCompleted(state, scope) {
+  const base = state && typeof state === "object" ? state : {};
+  return { ...base, [scope]: !base[scope] };
+}
+
+// ---- Completed-task filtering (Daily / registered-node views) ----
+
+// Hides completed todos unless showCompleted. Memos (non-todo items) are
+// always shown -- completion is a task concept.
+export function filterCompletedItems(items, showCompleted) {
+  if (showCompleted) return items;
+  return items.filter((item) => !item.todo || !item.completed);
+}
+
+// Daily groups after the completed filter; a day whose items are all hidden
+// loses its heading too (same rule as days with no notes at all).
+export function visibleDailyGroups(groups, showCompleted) {
+  if (showCompleted) return groups;
+  return groups
+    .map((g) => ({ ...g, items: filterCompletedItems(g.items, false) }))
+    .filter((g) => g.items.length > 0);
+}
+
 // ---- Compose ----
 
 // Compose destination:
@@ -171,13 +220,24 @@ export function splitNoteDraft(text) {
 }
 
 // Default destination when compose opens: the place backing the current view.
-// The Tasks view has no place of its own, so the last explicit choice (or
-// Daily today) is kept.
-export function composeDestForView(view, places, lastDest) {
-  if (view === "daily") return { kind: "daily", day: null };
+// The Tasks view has no place of its own; it (like Daily) defaults to Daily
+// today.
+export function composeDestForView(view, places) {
   const place = places.find((p) => p.id === view && p.kind === "node");
   if (place) return { kind: "place", placeId: place.id };
-  return lastDest || { kind: "daily", day: null };
+  return { kind: "daily", day: null };
+}
+
+// Where a new node lands under its parent. Anything but an explicit "top"
+// (including legacy/unset settings) means bottom.
+export function normalizePosition(value) {
+  return value === "top" ? "top" : "bottom";
+}
+
+// The compose sheet reopens in the mode it was last used in. Anything but an
+// explicit "note" (including legacy/unset settings) means task.
+export function initialComposeMode(saved) {
+  return saved === "note" ? "note" : "task";
 }
 
 function pad2(n) {

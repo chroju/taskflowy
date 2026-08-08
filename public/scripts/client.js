@@ -10,6 +10,8 @@ import {
   formatSyncAgo,
   classifyDue,
   groupTasksForView,
+  completedTasksForDueView,
+  countCompletedForView,
   summarizeNodes,
   filterFinishedNodes,
   groupNodeTasks,
@@ -29,7 +31,14 @@ import {
   dailyDateLabel,
   dailyCounts,
   itemTimeLabel,
+  filterCompletedItems,
+  visibleDailyGroups,
+  showCompletedFor,
+  toggleShowCompleted,
   composeDestForView,
+  topUiLayer,
+  initialComposeMode,
+  normalizePosition,
   destLabel,
   destSendTarget,
   splitNoteDraft,
@@ -43,16 +52,15 @@ import { urlBase64ToUint8Array } from "./push.js";
 
 let settings = loadSettings();
 // 場所（ビュー兼書き込み先）モデルへの移行。旧destinations設定から変換する。
-{
-  const migrated = migratePlaces(settings);
-  settings.places = migrated.places;
-  if (!settings.lastDest) settings.lastDest = migrated.lastDest;
-}
+settings.places = migratePlaces(settings).places;
 let isAuthenticated = false;
 let view = "tasks"; // 'tasks' | 'daily' | <place id>; restored in init()
 let tab = "today"; // Tasks ビュー内: 'today' | 'due' | 'nodes'
 let selectedNodeKey = null; // Nodes drilldown; cleared on tab switch
 let tasksState = []; // includes completed todos (for node progress)
+// Deadlines の完了グループ: 表示済みの 7 日ウィンドウ数と、その先の有無
+let dueCompletedPages = 1;
+let dueDoneHasMore = false;
 let lastSyncMs = null;
 let sheetTask = null; // task/item shown in the detail sheet
 let sheetOrigin = "tasks"; // どのビューの行か: 'tasks' | 'daily' | <place id>
@@ -133,6 +141,7 @@ const composePicker = $("compose-picker");
 const btnPickerDone = $("btn-picker-done");
 const pickerDailyChips = $("picker-daily-chips");
 const pickerDateInput = $("picker-date-input");
+const pickerPosChips = $("picker-pos-chips");
 const pickerPlaces = $("picker-places");
 const pickerNodeTree = $("picker-node-tree");
 
@@ -178,6 +187,7 @@ async function init() {
   nodeViews = loadNodeViewsCache();
   bindEvents();
   bindSettingsEvents();
+  bindBackButton();
   setupMobileViewport();
   registerServiceWorker();
   await checkAuth();
@@ -350,6 +360,22 @@ function render() {
   }
 }
 
+// 完了済みタスクの表示トグル。状態はビュー/タブごとに独立
+// （scope: 'today' | 'due' | 'nodes' | 'daily' | <place id>）。
+// 完了済みが 1 件も無いビューには出さない。
+function buildCompletedToggle(completedCount, scope) {
+  const show = showCompletedFor(settings.showCompletedTasks, scope);
+  const btn = document.createElement("button");
+  btn.className = "node-filter" + (show ? " active" : "");
+  btn.textContent = show ? "完了済みを隠す" : `完了済みを表示 (${completedCount})`;
+  btn.addEventListener("click", () => {
+    settings.showCompletedTasks = toggleShowCompleted(settings.showCompletedTasks, scope);
+    saveSettings();
+    render();
+  });
+  return btn;
+}
+
 function renderTasksView() {
   tabbar.classList.remove("hidden");
   const node = tab === "nodes" ? selectedNode() : null;
@@ -399,6 +425,7 @@ function switchView(next) {
   render();
   loadCurrentView();
   scrollActivePillIntoView();
+  syncHistoryArm(); // ドリルダウン中にビューを切り替えたときの番兵回収
 }
 
 function scrollActivePillIntoView() {
@@ -531,7 +558,11 @@ function renderDailyView() {
     return;
   }
 
-  const { items, days } = dailyCounts(dailyGroups);
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, "daily");
+  const groups = visibleDailyGroups(dailyGroups, showCompleted);
+  const completedCount = dailyCounts(dailyGroups).items - dailyCounts(visibleDailyGroups(dailyGroups, false)).items;
+
+  const { items, days } = dailyCounts(groups);
   screenCount.textContent = `${items} 件 / ${days} 日`;
   taskList.innerHTML = "";
 
@@ -542,8 +573,18 @@ function renderDailyView() {
     return;
   }
 
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, "daily"));
+
+  if (!groups.length) {
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "未完了のタスクはありません";
+    taskList.appendChild(empty);
+    return;
+  }
+
   const today = localDateString();
-  for (const group of dailyGroups) {
+  for (const group of groups) {
     const header = document.createElement("div");
     header.className = "group-header date" + (group.date === today ? " today" : "");
     header.innerHTML = '<span class="group-label"></span><span class="group-count"></span>';
@@ -638,13 +679,27 @@ function renderNodeView() {
     return;
   }
 
-  screenCount.textContent = `${entry.items.length} 件`;
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, view);
+  const items = filterCompletedItems(entry.items, showCompleted);
+  const completedCount = entry.items.length - filterCompletedItems(entry.items, false).length;
+
+  screenCount.textContent = `${items.length} 件`;
   if (!entry.items.length) {
     taskList.innerHTML = '<p class="list-empty">まだ何もありません</p>';
     return;
   }
 
-  for (const item of entry.items) {
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, view));
+
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "未完了のタスクはありません";
+    taskList.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
     taskList.appendChild(buildItemRow(item, { showTime: false, origin: view }));
   }
 }
@@ -664,12 +719,26 @@ function renderList(node) {
   }
 
   const today = localDateString();
-  const groups = node ? groupNodeTasks(node.tasks) : groupTasksForView(tasksState, tab, today);
+  // ドリルダウンは 'nodes' スコープ、Today/Deadlines はタブごとに独立
+  const scope = node ? "nodes" : tab;
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, scope);
+  const groups = node
+    ? groupNodeTasks(node.tasks, showCompleted)
+    : groupTasksForView(tasksState, tab, today, showCompleted, dueCompletedPages);
+  dueDoneHasMore =
+    !node && tab === "due" && showCompleted && !!groups.find((g) => g.key === "done")?.hasMore;
   const openCount = groups.reduce((n, g) => n + g.tasks.filter((t) => !t.completed).length, 0);
   screenCount.textContent = `${openCount} 件`;
 
+  // このビューに属する完了済みタスクの数（非表示中でもボタンの件数に出す）
+  const completedCount = node ? node.done : countCompletedForView(tasksState, tab, today);
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, scope));
+
   if (!groups.length) {
-    taskList.innerHTML = '<p class="list-empty">タスクはありません</p>';
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "タスクはありません";
+    taskList.appendChild(empty);
     return;
   }
 
@@ -685,6 +754,29 @@ function renderList(node) {
       taskList.appendChild(buildTaskRow(task, { showParent: !node }));
     }
   }
+
+  // 完了グループがリスト下端に届いていなければ画面が埋まるまで自動で追い読み
+  // （以降はスクロール下端で 7 日分ずつ。Daily と同じ形）
+  if (dueDoneHasMore && taskList.scrollHeight <= taskList.clientHeight) {
+    setTimeout(loadMoreCompletedDue, 0);
+  }
+}
+
+// Deadlines 完了グループの追い読み。次の 7 日ウィンドウへ広げる。完了が
+// 1 件も無い週はスキップして、必ず表示件数が増えるところまで進める。
+function loadMoreCompletedDue() {
+  if (!dueDoneHasMore || view !== "tasks" || tab !== "due") return;
+  const today = localDateString();
+  const current = completedTasksForDueView(tasksState, today, dueCompletedPages);
+  if (!current.hasMore) return;
+  let pages = dueCompletedPages;
+  let next;
+  do {
+    pages += 1;
+    next = completedTasksForDueView(tasksState, today, pages);
+  } while (next.hasMore && next.tasks.length === current.tasks.length);
+  dueCompletedPages = pages;
+  render();
 }
 
 function renderNodeList() {
@@ -734,6 +826,7 @@ function renderNodeList() {
     row.addEventListener("click", () => {
       selectedNodeKey = node.key;
       render();
+      armHistory();
     });
     container.appendChild(row);
   }
@@ -1159,6 +1252,7 @@ function openSheetFor(entity, origin) {
   sheetDueEditor.classList.add("hidden");
   sheetNoteEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
+  armHistory();
 }
 
 function toggleDueEditor() {
@@ -1219,12 +1313,71 @@ async function saveSheetNote() {
   }
 }
 
-function closeSheets() {
-  sheetTaskEl.classList.add("hidden");
-  sheetAddEl.classList.add("hidden");
-  sheetDeleteEl.classList.add("hidden");
-  sheetTask = null;
-  pendingDelete = null;
+// ==================== 戻るボタン統合 ====================
+//
+// シート/設定/ドリルダウンを開くとき番兵の履歴エントリを 1 つ積み、
+// popstate（戻るボタン）で最前面のレイヤーを 1 つだけ閉じる。レイヤーが
+// まだ残っていれば積み直す。UI 上の閉じる操作は history.back() に流して
+// 履歴と画面の状態を同期させる。何も開いていないときの戻るはアプリを出る。
+
+let historyArmed = false;
+
+function uiLayerFlags() {
+  const composeOpen = !sheetAddEl.classList.contains("hidden");
+  return {
+    deleteOpen: !sheetDeleteEl.classList.contains("hidden"),
+    pickerOpen: composeOpen && !composePicker.classList.contains("hidden"),
+    detailOpen: !sheetTaskEl.classList.contains("hidden"),
+    composeOpen,
+    settingsOpen: !screenSettings.classList.contains("hidden"),
+    drilldown: view === "tasks" && tab === "nodes" && !!selectedNodeKey,
+  };
+}
+
+function armHistory() {
+  if (historyArmed) return;
+  historyArmed = true;
+  history.pushState({ taskflowy: true }, "");
+}
+
+function closeTopLayer() {
+  const layer = topUiLayer(uiLayerFlags());
+  if (layer === "delete") {
+    sheetDeleteEl.classList.add("hidden");
+    pendingDelete = null;
+  } else if (layer === "picker") {
+    closePicker();
+  } else if (layer === "detail") {
+    sheetTaskEl.classList.add("hidden");
+    sheetTask = null;
+  } else if (layer === "compose") {
+    sheetAddEl.classList.add("hidden");
+  } else if (layer === "settings") {
+    screenSettings.classList.add("hidden");
+  } else if (layer === "drilldown") {
+    selectedNodeKey = null;
+    render();
+  }
+  return layer !== null;
+}
+
+// UI の閉じるボタン/背景タップ: 戻るボタンと同じ経路で最前面を閉じる
+function closeViaBack() {
+  if (historyArmed) history.back();
+  else closeTopLayer();
+}
+
+// history を介さずレイヤーを閉じたあと、何も残っていなければ番兵を回収する
+function syncHistoryArm() {
+  if (historyArmed && !topUiLayer(uiLayerFlags())) history.back();
+}
+
+function bindBackButton() {
+  window.addEventListener("popstate", () => {
+    if (!historyArmed) return; // 番兵より前の履歴操作（こちらでは何も開いていない）
+    historyArmed = false;
+    if (closeTopLayer() && topUiLayer(uiLayerFlags())) armHistory();
+  });
 }
 
 // ==================== Delete confirmation ====================
@@ -1233,6 +1386,7 @@ function openDeleteConfirm(title, run) {
   pendingDelete = { run };
   sheetDeleteTitle.textContent = title;
   sheetDeleteEl.classList.remove("hidden");
+  armHistory();
 }
 
 function confirmDelete() {
@@ -1240,6 +1394,7 @@ function confirmDelete() {
   const { run } = pendingDelete;
   pendingDelete = null;
   sheetDeleteEl.classList.add("hidden");
+  syncHistoryArm();
   run();
 }
 
@@ -1258,22 +1413,28 @@ let composeDest = null; // views.js の ComposeDest
 let pickerCustomDay = false; // セレクタで「日付…」チップを選んでいるか
 let composeTreeLoaded = false;
 
-function openAddSheet() {
+// 入力欄と期限だけを初期状態に戻す（モードと書き込み先は保つ）
+function resetComposeInputs() {
   taskNameInput.value = "";
   noteInput.value = "";
   taskDateInput.value = "";
   taskTimeInput.value = "";
   addDue = "today";
-  composeMode = "task";
-  // 既定の書き込み先は表示中のビューに対応する場所
-  composeDest = composeDestForView(view, settings.places, settings.lastDest);
+  renderDueChips();
+}
+
+function openAddSheet() {
+  composeMode = initialComposeMode(settings.composeMode); // 前回使ったモードで開く
+  // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
+  composeDest = composeDestForView(view, settings.places);
   pickerCustomDay = false;
   composePicker.classList.add("hidden");
   composeMain.classList.remove("hidden");
   renderCompose();
-  renderDueChips();
+  resetComposeInputs();
   sheetAddEl.classList.remove("hidden");
-  taskNameInput.focus();
+  armHistory();
+  (composeMode === "task" ? taskNameInput : noteInput).focus();
 }
 
 function renderCompose() {
@@ -1317,6 +1478,7 @@ function resolveAddDue() {
 function openPicker() {
   composeMain.classList.add("hidden");
   composePicker.classList.remove("hidden");
+  armHistory();
   if (!composeTreeLoaded) {
     composeTreeLoaded = true;
     composeNodeTree.load();
@@ -1346,6 +1508,11 @@ function renderPicker() {
   pickerDateInput.classList.toggle("hidden", !(dayValue !== null && pickerCustomDay));
   if (dayValue !== null && pickerCustomDay) pickerDateInput.value = dayValue;
 
+  const pos = normalizePosition(settings.composePosition);
+  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.pos === pos);
+  });
+
   pickerPlaces.innerHTML = "";
   const nodePlaces = settings.places.filter((p) => p.kind === "node");
   if (!nodePlaces.length) {
@@ -1371,10 +1538,10 @@ function renderPicker() {
 // ---- 送信 ----
 
 // 送信直後の楽観反映: 読み込み済みの Daily グループに行を差し込む
-function insertDailyItem(date, item) {
+function insertDailyItem(date, item, position) {
   const group = dailyGroups.find((g) => g.date === date);
   if (group) {
-    group.items = [item, ...group.items];
+    group.items = position === "top" ? [item, ...group.items] : [...group.items, item];
   } else {
     const newGroup = { date, items: [item], hasMore: false };
     const at = dailyGroups.findIndex((g) => g.date < date);
@@ -1387,6 +1554,7 @@ function insertDailyItem(date, item) {
 
 function afterComposeSend(dest, { id, name, note, todo, due }) {
   const now = Math.floor(Date.now() / 1000);
+  const position = normalizePosition(settings.composePosition);
   const item = {
     id: id || `temp-${Date.now()}`,
     name,
@@ -1401,11 +1569,12 @@ function afterComposeSend(dest, { id, name, note, todo, due }) {
   if (!target) return;
 
   if (target.targetType === "calendar") {
-    insertDailyItem(target.day, item);
+    insertDailyItem(target.day, item, position);
   } else if (dest.kind === "place" && nodeViews[dest.placeId]) {
+    const items = nodeViews[dest.placeId].items;
     nodeViews[dest.placeId] = {
       ...nodeViews[dest.placeId],
-      items: [item, ...nodeViews[dest.placeId].items],
+      items: position === "top" ? [item, ...items] : [...items, item],
     };
     saveNodeViewsCache();
   }
@@ -1439,7 +1608,7 @@ function afterComposeSend(dest, { id, name, note, todo, due }) {
 async function handleAddTask() {
   const name = taskNameInput.value.trim();
   if (!name) {
-    closeSheets();
+    closeViaBack(); // 空のまま追加 = 連続追加の終了
     return;
   }
   const dest = composeDest;
@@ -1453,7 +1622,12 @@ async function handleAddTask() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({ ...target, name, layoutMode: "todo" }),
+      body: JSON.stringify({
+        ...target,
+        name,
+        position: normalizePosition(settings.composePosition),
+        layoutMode: "todo",
+      }),
     });
 
     const due = resolveAddDue();
@@ -1464,10 +1638,10 @@ async function handleAddTask() {
       });
     }
 
-    settings.lastDest = dest;
-    saveSettings();
     afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
-    closeSheets();
+    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+    resetComposeInputs();
+    taskNameInput.focus();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
@@ -1479,7 +1653,7 @@ async function handleAddTask() {
 async function handleSendNote() {
   const draft = splitNoteDraft(noteInput.value);
   if (!draft) {
-    closeSheets();
+    closeViaBack(); // 空のまま追加 = 連続追加の終了
     return;
   }
   const dest = composeDest;
@@ -1493,14 +1667,19 @@ async function handleSendNote() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({ ...target, name: draft.name, note: draft.note || undefined }),
+      body: JSON.stringify({
+        ...target,
+        name: draft.name,
+        note: draft.note || undefined,
+        position: normalizePosition(settings.composePosition),
+      }),
     });
-    settings.lastDest = dest;
-    saveSettings();
     afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
-    closeSheets();
-    // ノートを Daily に書いたときは Daily ビューへ移動してその行を見せる
+    // 連続追加: シートは開いたままにし、入力だけ初期化して次の1件を待つ
+    resetComposeInputs();
+    // ノートを Daily に書いたときは背後を Daily ビューへ移動してその行を見せる
     if (dest.kind === "daily" && view !== "daily") switchView("daily");
+    noteInput.focus();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
@@ -1517,21 +1696,19 @@ function bindEvents() {
       tab = btn.dataset.tab;
       selectedNodeKey = null;
       render();
+      syncHistoryArm(); // ドリルダウンをタブ切り替えで抜けたら番兵を回収
     });
   });
 
-  btnBack.addEventListener("click", () => {
-    selectedNodeKey = null;
-    render();
-  });
+  btnBack.addEventListener("click", closeViaBack);
 
   btnSettings.addEventListener("click", openSettings);
-  btnCloseSettings.addEventListener("click", closeSettings);
+  btnCloseSettings.addEventListener("click", closeViaBack);
 
   btnAddTask.addEventListener("click", openAddSheet);
 
   document.querySelectorAll("[data-close-sheet]").forEach((el) => {
-    el.addEventListener("click", closeSheets);
+    el.addEventListener("click", closeViaBack);
   });
 
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
@@ -1558,6 +1735,8 @@ function bindEvents() {
   composeModebar.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       composeMode = btn.dataset.mode;
+      settings.composeMode = composeMode; // 次回もこのモードで開く
+      saveSettings();
       renderCompose();
       (composeMode === "task" ? taskNameInput : noteInput).focus();
     });
@@ -1590,6 +1769,14 @@ function bindEvents() {
     }
   });
 
+  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      settings.composePosition = chip.dataset.pos;
+      saveSettings();
+      renderPicker();
+    });
+  });
+
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
@@ -1616,14 +1803,14 @@ function bindEvents() {
   btnSheetCancelNote.addEventListener("click", () => sheetNoteEditor.classList.add("hidden"));
 
   btnConfirmDelete.addEventListener("click", confirmDelete);
-  btnCancelDelete.addEventListener("click", closeSheets);
+  btnCancelDelete.addEventListener("click", closeViaBack);
 
   btnSheetComplete.addEventListener("click", () => {
     if (!sheetTask) return;
     const row = findRow(sheetTask.id);
     if (sheetOrigin === "tasks") toggleComplete(sheetTask, row);
     else toggleItemComplete(sheetTask, row, sheetOrigin);
-    closeSheets();
+    closeViaBack();
   });
 
   btnSheetDelete.addEventListener("click", () => {
@@ -1641,12 +1828,13 @@ function bindEvents() {
 
   bindViewBarSwipe();
 
-  // Daily の無限スクロール（下端付近で過去分を自動読み込み）
+  // 無限スクロール（下端付近で自動読み込み）: Daily の過去分と
+  // Deadlines 完了グループの続き
   taskList.addEventListener("scroll", () => {
-    if (view !== "daily" || !dailyHasMore || dailyLoading) return;
-    if (taskList.scrollTop + taskList.clientHeight >= taskList.scrollHeight - 200) {
-      loadDailyMore();
-    }
+    const nearBottom = taskList.scrollTop + taskList.clientHeight >= taskList.scrollHeight - 200;
+    if (!nearBottom) return;
+    if (view === "daily" && dailyHasMore && !dailyLoading) loadDailyMore();
+    else if (dueDoneHasMore) loadMoreCompletedDue();
   });
 
   // Re-fetch when the app returns to the foreground, so edits made in
@@ -1667,7 +1855,7 @@ async function snoozeSheetTask(option) {
   if (!due) return;
   const entity = sheetTask;
   const origin = sheetOrigin;
-  closeSheets();
+  closeViaBack();
   try {
     await scheduleEntity(entity, due.date, undefined, origin);
     showToast(option === "tomorrow" ? "明日に設定しました" : "来週に設定しました");
@@ -1685,10 +1873,7 @@ function openSettings() {
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
-}
-
-function closeSettings() {
-  screenSettings.classList.add("hidden");
+  armHistory();
 }
 
 function updateApiKeyUI() {
@@ -1836,9 +2021,6 @@ function deletePlace(id) {
   const place = settings.places.find((p) => p.id === id);
   if (!place || place.kind !== "node") return; // 組み込みの Tasks / Daily は削除不可
   settings.places = settings.places.filter((p) => p.id !== id);
-  if (settings.lastDest && settings.lastDest.kind === "place" && settings.lastDest.placeId === id) {
-    settings.lastDest = null;
-  }
   saveSettings();
   saveNodeViewsCache(); // 削除した場所のビューキャッシュを落とす
   renderPlaceList();

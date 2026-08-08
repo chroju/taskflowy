@@ -12,6 +12,9 @@ const {
   classifyDue,
   compareDue,
   groupTasksForView,
+  completedDateOf,
+  completedTasksForDueView,
+  countCompletedForView,
   summarizeNodes,
   filterFinishedNodes,
   groupNodeTasks,
@@ -25,6 +28,13 @@ const {
 
 const TODAY = "2026-08-01"; // Saturday
 
+// Unix seconds at local noon of a YYYY-MM-DD, so the local date is stable
+// regardless of the timezone the tests run in.
+function noonTs(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return Math.floor(new Date(y, m - 1, d, 12).getTime() / 1000);
+}
+
 function task(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -35,6 +45,7 @@ function task(overrides: Record<string, unknown> = {}) {
     createdAt: 0,
     due: null,
     completed: false,
+    completedAt: null,
     ...overrides,
   };
 }
@@ -247,6 +258,41 @@ describe("groupTasksForView (today)", () => {
     const groups = groupTasksForView(tasks, "today", TODAY);
     expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日"]);
   });
+
+  it("appends a 完了 group with tasks due today or completed today", () => {
+    const tasks = [
+      task({ id: "td", due: { date: "2026-08-01", time: null } }),
+      // Due today, completed a while ago: still today's business.
+      task({ id: "dueToday", due: { date: "2026-08-01", time: null }, completed: true, completedAt: noonTs("2026-07-20") }),
+      // Overdue task knocked out today: shows as today's accomplishment.
+      task({ id: "doneToday", due: { date: "2026-07-25", time: null }, completed: true, completedAt: noonTs("2026-08-01") }),
+      // Completed long ago with an old due date: not today's.
+      task({ id: "old", due: { date: "2026-07-25", time: null }, completed: true, completedAt: noonTs("2026-07-25") }),
+    ];
+    const groups = groupTasksForView(tasks, "today", TODAY, true);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日", "完了"]);
+    // Newest completion first.
+    expect(groups[1].tasks.map((t: { id: string }) => t.id)).toEqual(["doneToday", "dueToday"]);
+  });
+
+  it("keeps unrelated completed tasks out of the 完了 group", () => {
+    // Due tomorrow, completed yesterday: neither due today nor completed today.
+    const tasks = [
+      task({ id: "tm", due: { date: "2026-08-02", time: null }, completed: true, completedAt: noonTs("2026-07-31") }),
+    ];
+    expect(groupTasksForView(tasks, "today", TODAY, true)).toEqual([]);
+  });
+});
+
+describe("completedDateOf", () => {
+  it("uses completedAt when present", () => {
+    expect(completedDateOf(task({ completedAt: noonTs("2026-07-30") }))).toBe("2026-07-30");
+  });
+
+  it("falls back to the due date, then null", () => {
+    expect(completedDateOf(task({ due: { date: "2026-07-28", time: null } }))).toBe("2026-07-28");
+    expect(completedDateOf(task({}))).toBe(null);
+  });
 });
 
 describe("groupTasksForView (due)", () => {
@@ -277,6 +323,72 @@ describe("groupTasksForView (due)", () => {
     ];
     const groups = groupTasksForView(tasks, "due", TODAY);
     expect(groups[0].tasks.map((t: { id: string }) => t.id)).toEqual(["a", "b"]);
+  });
+
+  it("appends a windowed 完了 group (newest completion first) when showCompleted is true", () => {
+    const tasks = [
+      task({ id: "open", due: { date: "2026-08-01", time: null } }),
+      task({ id: "recent", completed: true, completedAt: noonTs("2026-07-30") }),
+      task({ id: "older", completed: true, completedAt: noonTs("2026-07-10") }),
+    ];
+    const groups = groupTasksForView(tasks, "due", TODAY, true);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["今日", "完了"]);
+    // First page = last 7 days only; hasMore marks the group for scroll paging.
+    expect(groups[1].tasks.map((t: { id: string }) => t.id)).toEqual(["recent"]);
+    expect(groups[1].hasMore).toBe(true);
+  });
+});
+
+describe("completedTasksForDueView", () => {
+  const tasks = [
+    task({ id: "open" }),
+    task({ id: "d1", completed: true, completedAt: noonTs("2026-08-01") }),
+    task({ id: "d2", completed: true, completedAt: noonTs("2026-07-26") }),
+    task({ id: "d3", completed: true, completedAt: noonTs("2026-07-25") }),
+    task({ id: "d4", completed: true, completedAt: noonTs("2026-06-01") }),
+    task({ id: "nodate", completed: true }),
+  ];
+
+  it("returns the last 7 days sorted by completion desc, with hasMore", () => {
+    const { tasks: page, hasMore } = completedTasksForDueView(tasks, TODAY, 1);
+    expect(page.map((t: { id: string }) => t.id)).toEqual(["d1", "d2"]);
+    expect(hasMore).toBe(true);
+  });
+
+  it("extends the window by 7 days per page", () => {
+    const { tasks: page, hasMore } = completedTasksForDueView(tasks, TODAY, 2);
+    expect(page.map((t: { id: string }) => t.id)).toEqual(["d1", "d2", "d3"]);
+    expect(hasMore).toBe(true);
+  });
+
+  it("appends undated completions once every dated one is visible", () => {
+    const { tasks: page, hasMore } = completedTasksForDueView(tasks, TODAY, 10);
+    expect(page.map((t: { id: string }) => t.id)).toEqual(["d1", "d2", "d3", "d4", "nodate"]);
+    expect(hasMore).toBe(false);
+  });
+
+  it("falls back to the due date when completedAt is missing", () => {
+    const list = [task({ id: "dd", completed: true, due: { date: "2026-07-29", time: null } })];
+    const { tasks: page, hasMore } = completedTasksForDueView(list, TODAY, 1);
+    expect(page.map((t: { id: string }) => t.id)).toEqual(["dd"]);
+    expect(hasMore).toBe(false);
+  });
+});
+
+describe("countCompletedForView", () => {
+  const tasks = [
+    task({ id: "open", due: { date: "2026-08-01", time: null } }),
+    task({ id: "dueToday", due: { date: "2026-08-01", time: null }, completed: true, completedAt: noonTs("2026-07-20") }),
+    task({ id: "doneToday", completed: true, completedAt: noonTs("2026-08-01") }),
+    task({ id: "old", completed: true, completedAt: noonTs("2026-06-01") }),
+  ];
+
+  it("counts due-today-or-completed-today for the today view", () => {
+    expect(countCompletedForView(tasks, "today", TODAY)).toBe(2);
+  });
+
+  it("counts every completed task for the due view", () => {
+    expect(countCompletedForView(tasks, "due", TODAY)).toBe(3);
   });
 });
 
@@ -345,6 +457,13 @@ describe("groupNodeTasks", () => {
   it("omits empty groups", () => {
     const groups = groupNodeTasks([task({ id: "a" })]);
     expect(groups.map((g: { label: string }) => g.label)).toEqual(["未完了"]);
+  });
+
+  it("omits the 完了 group when showCompleted is false", () => {
+    const tasks = [task({ id: "a" }), task({ id: "b", completed: true })];
+    const groups = groupNodeTasks(tasks, false);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["未完了"]);
+    expect(groups[0].tasks.map((t: { id: string }) => t.id)).toEqual(["a"]);
   });
 });
 

@@ -103,6 +103,7 @@ api.post("/send", async (c) => {
     day?: string; // calendar only: "today" (default) | "tomorrow" | "next_week" | "YYYY-MM-DD"
     name: string;
     note?: string;
+    position?: "top" | "bottom";
     layoutMode?: "todo";
   }>();
 
@@ -119,10 +120,15 @@ api.post("/send", async (c) => {
     return c.json({ error: "invalid targetType" }, 400);
   }
 
+  if (body.position !== undefined && body.position !== "top" && body.position !== "bottom") {
+    return c.json({ error: "invalid position" }, 400);
+  }
+
   const client = new WorkflowyClient(apiKey);
-  const result = body.layoutMode
-    ? await client.createNode(parentId, body.name, body.note, undefined, body.layoutMode)
-    : await client.createNode(parentId, body.name, body.note);
+  const result =
+    body.layoutMode || body.position
+      ? await client.createNode(parentId, body.name, body.note, body.position, body.layoutMode)
+      : await client.createNode(parentId, body.name, body.note);
   return c.json(result);
 });
 

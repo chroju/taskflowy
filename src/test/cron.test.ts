@@ -196,7 +196,7 @@ describe("runNotificationSweep", () => {
     expect(stored.map((s: { endpoint: string }) => s.endpoint)).toEqual(["https://a"]);
   });
 
-  it("suppresses long-overdue backlog without sending, but still records it", async () => {
+  it("folds long-overdue backlog into a single overdue digest instead of individual pushes", async () => {
     kv._store.set("auth:apikey", "encrypted-token");
     kv._store.set(
       "push:subscriptions",
@@ -214,8 +214,38 @@ describe("runNotificationSweep", () => {
 
     const result = await runNotificationSweep(makeEnv(kv), new Date("2026-07-28T06:00:00Z"));
 
+    // One digest push, no per-task push burst.
+    expect(mockSendPush).toHaveBeenCalledTimes(1);
+    const [, payload] = mockSendPush.mock.calls[0];
+    expect(payload.title).toBe("Overdue tasks (1)");
+    expect(payload.body).toContain("Old task");
+    expect(result.sent).toBe(1);
+    // The timed key is still recorded so the individual push never fires,
+    // and the overdue key keeps today's digest from repeating.
+    expect(kv._store.has("notification:notified:old:2026-07-20:10:00")).toBe(true);
+    expect(kv._store.has("notification:notified:overdue:2026-07-28:old")).toBe(true);
+  });
+
+  it("does not repeat the overdue digest on a later sweep the same day", async () => {
+    kv._store.set("auth:apikey", "encrypted-token");
+    kv._store.set(
+      "push:subscriptions",
+      JSON.stringify([
+        { endpoint: "https://a", expirationTime: null, keys: { auth: "a", p256dh: "a" } },
+      ])
+    );
+    kv._store.set("notification:notified:old:2026-07-20:10:00", "1");
+    kv._store.set("notification:notified:overdue:2026-07-28:old", "1");
+    mockNodesExport.mockResolvedValue([
+      makeExportNode({
+        id: "old",
+        name: 'Old task <time startYear="2026" startMonth="7" startDay="20" startHour="10" startMinute="0">x</time>',
+        data: { layoutMode: "todo" },
+      }),
+    ]);
+
+    const result = await runNotificationSweep(makeEnv(kv), new Date("2026-07-28T06:00:00Z"));
     expect(mockSendPush).not.toHaveBeenCalled();
     expect(result.sent).toBe(0);
-    expect(kv._store.has("notification:notified:old:2026-07-20:10:00")).toBe(true);
   });
 });

@@ -32,6 +32,7 @@ export function extractTasks(
       parentId: n.parent_id,
       parentPath: buildParentPath(n, byId),
       createdAt: n.createdAt,
+      completedAt: n.completedAt ?? null,
       due: parseTimeMarkup(n.name),
       completed: isCompleted(n),
     }));

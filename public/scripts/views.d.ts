@@ -38,12 +38,36 @@ export function dailyDateLabel(dateStr: string): string;
 export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: number };
 export function itemTimeLabel(createdAt: number): string;
 
+export interface UiLayerFlags {
+  deleteOpen: boolean;
+  pickerOpen: boolean;
+  detailOpen: boolean;
+  composeOpen: boolean;
+  settingsOpen: boolean;
+  drilldown: boolean;
+}
+
+export function topUiLayer(
+  flags: UiLayerFlags
+): "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
+
+export type ShowCompletedState = Record<string, boolean> | boolean | undefined | null;
+export function showCompletedFor(state: ShowCompletedState, scope: string): boolean;
+export function toggleShowCompleted(state: ShowCompletedState, scope: string): Record<string, boolean>;
+
+export interface ViewItemLike {
+  todo?: boolean;
+  completed?: boolean;
+  [key: string]: unknown;
+}
+
+export function filterCompletedItems<T extends ViewItemLike>(items: T[], showCompleted: boolean): T[];
+export function visibleDailyGroups<G extends DailyGroupLike>(groups: G[], showCompleted: boolean): G[];
+
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
-export function composeDestForView(
-  view: string,
-  places: Place[],
-  lastDest: ComposeDest | null
-): ComposeDest;
+export function composeDestForView(view: string, places: Place[]): ComposeDest;
+export function normalizePosition(value: unknown): "top" | "bottom";
+export function initialComposeMode(saved: unknown): "task" | "note";
 export function dayPhrase(day: string | null, todayStr?: string): string;
 export function destLabel(dest: ComposeDest | null, places: Place[], todayStr?: string): string;
 export function destSendTarget(

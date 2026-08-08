@@ -13,7 +13,14 @@ import {
   dailyCounts,
   itemTimeLabel,
   splitNoteDraft,
+  topUiLayer,
+  showCompletedFor,
+  toggleShowCompleted,
+  filterCompletedItems,
+  visibleDailyGroups,
   composeDestForView,
+  initialComposeMode,
+  normalizePosition,
   dayPhrase,
   destLabel,
   destSendTarget,
@@ -157,6 +164,88 @@ describe("Daily view helpers", () => {
   });
 });
 
+describe("topUiLayer", () => {
+  const none = {
+    deleteOpen: false,
+    pickerOpen: false,
+    detailOpen: false,
+    composeOpen: false,
+    settingsOpen: false,
+    drilldown: false,
+  };
+
+  it("returns null when nothing is open (back may leave the app)", () => {
+    expect(topUiLayer(none)).toBeNull();
+  });
+
+  it("closes the delete confirmation before anything else", () => {
+    expect(topUiLayer({ ...none, deleteOpen: true, detailOpen: true, drilldown: true })).toBe("delete");
+  });
+
+  it("closes the destination picker before the compose sheet", () => {
+    expect(topUiLayer({ ...none, pickerOpen: true, composeOpen: true })).toBe("picker");
+    expect(topUiLayer({ ...none, composeOpen: true })).toBe("compose");
+  });
+
+  it("closes an open sheet before leaving a drilldown", () => {
+    expect(topUiLayer({ ...none, detailOpen: true, drilldown: true })).toBe("detail");
+    expect(topUiLayer({ ...none, drilldown: true })).toBe("drilldown");
+  });
+
+  it("closes the settings screen", () => {
+    expect(topUiLayer({ ...none, settingsOpen: true })).toBe("settings");
+  });
+});
+
+describe("per-view showCompleted state", () => {
+  it("reads a scope's flag from the map, defaulting to false", () => {
+    expect(showCompletedFor({ today: true }, "today")).toBe(true);
+    expect(showCompletedFor({ today: true }, "due")).toBe(false);
+    expect(showCompletedFor(undefined, "today")).toBe(false);
+  });
+
+  it("treats a legacy boolean value as empty state", () => {
+    expect(showCompletedFor(true, "today")).toBe(false);
+  });
+
+  it("toggles one scope without touching the others", () => {
+    const next = toggleShowCompleted({ today: true }, "due");
+    expect(next).toEqual({ today: true, due: true });
+    expect(toggleShowCompleted(next, "today")).toEqual({ today: false, due: true });
+  });
+
+  it("toggles from a missing or legacy state", () => {
+    expect(toggleShowCompleted(undefined, "daily")).toEqual({ daily: true });
+    expect(toggleShowCompleted(true, "daily")).toEqual({ daily: true });
+  });
+});
+
+describe("completed-task filtering", () => {
+  const items = [
+    { id: "m1", todo: false, completed: false },
+    { id: "t1", todo: true, completed: false },
+    { id: "t2", todo: true, completed: true },
+  ];
+
+  it("hides completed todos but always keeps memos", () => {
+    expect(filterCompletedItems(items, false).map((i: { id: string }) => i.id)).toEqual(["m1", "t1"]);
+  });
+
+  it("keeps everything when showCompleted is on", () => {
+    expect(filterCompletedItems(items, true)).toBe(items);
+  });
+
+  it("drops day groups whose items are all hidden", () => {
+    const groups = [
+      { date: "2026-08-08", items: [{ id: "t1", todo: true, completed: false }], hasMore: false },
+      { date: "2026-08-07", items: [{ id: "t2", todo: true, completed: true }], hasMore: false },
+    ];
+    const visible = visibleDailyGroups(groups, false);
+    expect(visible.map((g: { date: string }) => g.date)).toEqual(["2026-08-08"]);
+    expect(visibleDailyGroups(groups, true)).toBe(groups);
+  });
+});
+
 describe("splitNoteDraft", () => {
   it("splits name and note at the first blank line", () => {
     expect(splitNoteDraft("Title line\n\nbody line 1\nbody line 2")).toEqual({
@@ -182,15 +271,13 @@ describe("splitNoteDraft", () => {
 describe("compose destination", () => {
   it("defaults to the place backing the current view", () => {
     const places = placesFixture();
-    expect(composeDestForView("daily", places, null)).toEqual({ kind: "daily", day: null });
-    expect(composeDestForView("p1", places, null)).toEqual({ kind: "place", placeId: "p1" });
+    expect(composeDestForView("daily", places)).toEqual({ kind: "daily", day: null });
+    expect(composeDestForView("p1", places)).toEqual({ kind: "place", placeId: "p1" });
   });
 
-  it("keeps the last explicit choice on the Tasks view", () => {
+  it("defaults to Daily (today) on the Tasks view", () => {
     const places = placesFixture();
-    const last = { kind: "place", placeId: "p1" } as const;
-    expect(composeDestForView("tasks", places, last)).toBe(last);
-    expect(composeDestForView("tasks", places, null)).toEqual({ kind: "daily", day: null });
+    expect(composeDestForView("tasks", places)).toEqual({ kind: "daily", day: null });
   });
 
   it("phrases Daily days with the shared due-chip vocabulary", () => {
@@ -205,6 +292,20 @@ describe("compose destination", () => {
     expect(destLabel({ kind: "daily", day: null }, places, TODAY)).toBe("Daily · 今日（08/08）");
     expect(destLabel({ kind: "place", placeId: "p1" }, places, TODAY)).toBe("記事クリップ");
     expect(destLabel({ kind: "node", nodeId: "n9", name: "資料" }, places, TODAY)).toBe("資料");
+  });
+
+  it("restores the last used compose mode, defaulting to task", () => {
+    expect(initialComposeMode("note")).toBe("note");
+    expect(initialComposeMode("task")).toBe("task");
+    expect(initialComposeMode(undefined)).toBe("task");
+    expect(initialComposeMode("weird")).toBe("task");
+  });
+
+  it("normalizes the insert position, defaulting to bottom", () => {
+    expect(normalizePosition("top")).toBe("top");
+    expect(normalizePosition("bottom")).toBe("bottom");
+    expect(normalizePosition(undefined)).toBe("bottom");
+    expect(normalizePosition("weird")).toBe("bottom");
   });
 
   it("resolves destinations to send targets with explicit local dates", () => {

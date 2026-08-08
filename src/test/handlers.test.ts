@@ -250,6 +250,38 @@ describe("POST /api/send", () => {
     expect(res.status).toBe(200);
     expect(mockCreateNode).toHaveBeenCalledWith("today", "Hello", undefined);
   });
+
+  it("propagates position to createNode when provided", async () => {
+    const req = makeRequest("/api/send", {
+      method: "POST",
+      body: JSON.stringify({ targetType: "node", parentId: "parent-1", name: "Hello", position: "top" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockCreateNode).toHaveBeenCalledWith("parent-1", "Hello", undefined, "top", undefined);
+  });
+
+  it("propagates position together with layoutMode", async () => {
+    const req = makeRequest("/api/send", {
+      method: "POST",
+      body: JSON.stringify({ targetType: "calendar", name: "Hello", position: "bottom", layoutMode: "todo" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockCreateNode).toHaveBeenCalledWith("today", "Hello", undefined, "bottom", "todo");
+  });
+
+  it("returns 400 for an invalid position", async () => {
+    const req = makeRequest("/api/send", {
+      method: "POST",
+      body: JSON.stringify({ targetType: "calendar", name: "Hello", position: "middle" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+    expect(mockCreateNode).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/send (calendar day)", () => {

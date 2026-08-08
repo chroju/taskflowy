@@ -9,6 +9,7 @@ export interface TaskLike {
   parentId?: string | null;
   parentPath?: string[];
   createdAt?: number;
+  completedAt?: number | null;
   completed?: boolean;
   [key: string]: unknown;
 }
@@ -18,6 +19,7 @@ export interface TaskGroup<T> {
   label: string;
   overdue: boolean;
   tasks: T[];
+  hasMore?: boolean;
 }
 
 export interface NodeSummary<T> {
@@ -45,15 +47,28 @@ export function compareDue(a: { due?: TaskDue | null }, b: { due?: TaskDue | nul
 export function groupTasksForView<T extends TaskLike>(
   tasks: T[],
   view: "today" | "due",
-  todayStr?: string
+  todayStr?: string,
+  showCompleted?: boolean,
+  completedPages?: number
 ): TaskGroup<T>[];
+export function completedDateOf(task: TaskLike): string | null;
+export function completedTasksForDueView<T extends TaskLike>(
+  tasks: T[],
+  todayStr: string,
+  pages?: number
+): { tasks: T[]; hasMore: boolean };
+export function countCompletedForView<T extends TaskLike>(
+  tasks: T[],
+  view: "today" | "due",
+  todayStr?: string
+): number;
 
 export function summarizeNodes<T extends TaskLike>(tasks: T[], todayStr?: string): NodeSummary<T>[];
 export function filterFinishedNodes<T extends TaskLike>(
   nodes: NodeSummary<T>[],
   showFinished: boolean
 ): NodeSummary<T>[];
-export function groupNodeTasks<T extends TaskLike>(tasks: T[]): TaskGroup<T>[];
+export function groupNodeTasks<T extends TaskLike>(tasks: T[], showCompleted?: boolean): TaskGroup<T>[];
 export function donutDash(done: number, total: number): string;
 
 export function workflowyUrl(nodeId: string): string;

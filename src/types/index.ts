@@ -47,6 +47,7 @@ export interface Task {
   parentId: string | null;
   parentPath: string[]; // root-first, nearest parent last
   createdAt: number;
+  completedAt: number | null; // Unix seconds; used to date the 完了 groups
   due: { date: string; time: string | null } | null;
   completed: boolean;
 }

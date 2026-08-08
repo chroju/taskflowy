@@ -5,19 +5,23 @@ import { jstDateString, jstHour, jstDateTimeFromParts } from "./jst";
 // recorded under once sent successfully.
 export type NotificationPlan =
   | { type: "timed"; key: string; tasks: [Task] }
-  | { type: "daily"; keys: string[]; tasks: Task[] };
+  // The morning digest: tasks due today plus everything still open past its
+  // due date. The overdue section repeats each morning (keyed by today's
+  // date) until the task is completed or rescheduled.
+  | { type: "daily"; keys: string[]; tasks: Task[]; overdueTasks: Task[] };
 
 export interface SelectDueNotificationsResult {
   notifications: NotificationPlan[];
   // Keys that should be recorded as notified WITHOUT sending a push - used to
-  // suppress a large backlog of overdue tasks (e.g. from before the app was
-  // installed) from all firing at once on the first Cron run.
+  // keep a pre-existing backlog of timed tasks from firing a burst of
+  // individual pushes on the first Cron run (they still show up in the
+  // digest's overdue section).
   keysToMarkNotified: string[];
 }
 
-// Only tasks that became due within this window are actually notified;
-// anything older is treated as pre-existing backlog and silently marked
-// notified instead.
+// Only timed tasks that became due within this window get their individual
+// push; anything older is treated as pre-existing backlog and silently
+// marked notified instead.
 const OVERDUE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function timedKey(taskId: string, date: string, time: string): string {
@@ -26,6 +30,12 @@ function timedKey(taskId: string, date: string, time: string): string {
 
 function dailyKey(date: string, taskId: string): string {
   return `daily:${date}:${taskId}`;
+}
+
+// Keyed by *today*, not the due date, so the same overdue task fires again
+// each new morning.
+export function overdueKey(today: string, taskId: string): string {
+  return `overdue:${today}:${taskId}`;
 }
 
 export function selectDueNotifications(
@@ -43,53 +53,56 @@ export function selectDueNotifications(
 
   const dailyBundleTasks: Task[] = [];
   const dailyBundleKeys: string[] = [];
+  const overdueBundleTasks: Task[] = [];
+  const overdueBundleKeys: string[] = [];
 
   for (const task of tasks) {
     if (!task.due) continue;
 
     if (task.due.time) {
+      // Individual push the moment a timed task's due time passes.
       const dueInstant = jstDateTimeFromParts(task.due.date, task.due.time);
-      if (dueInstant.getTime() > nowMs) continue; // not due yet
-
-      const key = timedKey(task.id, task.due.date, task.due.time);
-      if (notifiedKeys.has(key)) continue;
-
-      const overdueMs = nowMs - dueInstant.getTime();
-      if (overdueMs > OVERDUE_WINDOW_MS) {
-        // Pre-existing backlog: mark notified without sending.
-        keysToMarkNotified.push(key);
-        continue;
+      if (dueInstant.getTime() <= nowMs) {
+        const key = timedKey(task.id, task.due.date, task.due.time);
+        if (!notifiedKeys.has(key)) {
+          const overdueMs = nowMs - dueInstant.getTime();
+          if (overdueMs > OVERDUE_WINDOW_MS) {
+            // Pre-existing backlog: mark notified without an individual
+            // push. The digest's overdue section still covers the task.
+            keysToMarkNotified.push(key);
+          } else {
+            notifications.push({ type: "timed", key, tasks: [task] });
+          }
+        }
       }
-
-      notifications.push({ type: "timed", key, tasks: [task] });
-    } else {
-      // Date-only tasks only ever fire on their exact due date. Anything
-      // whose due date has already passed is backlog, not "due now".
-      if (task.due.date > today) continue; // in the future
-
-      const key = dailyKey(task.due.date, task.id);
-      if (notifiedKeys.has(key)) continue;
-
-      if (task.due.date < today) {
-        // Missed entirely (backlog from before install, or a day the Cron
-        // didn't run) - mark notified without sending.
-        keysToMarkNotified.push(key);
-        continue;
+    } else if (task.due.date === today) {
+      // Date-only tasks due today go into the morning digest.
+      if (currentHour >= settings.morningHour) {
+        const key = dailyKey(task.due.date, task.id);
+        if (!notifiedKeys.has(key)) {
+          dailyBundleTasks.push(task);
+          dailyBundleKeys.push(key);
+        }
       }
+    }
 
-      // task.due.date === today
-      if (currentHour < settings.morningHour) continue; // too early
-
-      dailyBundleTasks.push(task);
-      dailyBundleKeys.push(key);
+    // Anything (timed or not) still open past its due date joins the
+    // digest's overdue section, every morning anew.
+    if (task.due.date < today && currentHour >= settings.morningHour) {
+      const key = overdueKey(today, task.id);
+      if (!notifiedKeys.has(key)) {
+        overdueBundleTasks.push(task);
+        overdueBundleKeys.push(key);
+      }
     }
   }
 
-  if (dailyBundleTasks.length > 0) {
+  if (dailyBundleTasks.length > 0 || overdueBundleTasks.length > 0) {
     notifications.push({
       type: "daily",
-      keys: dailyBundleKeys,
+      keys: [...dailyBundleKeys, ...overdueBundleKeys],
       tasks: dailyBundleTasks,
+      overdueTasks: overdueBundleTasks,
     });
   }
 

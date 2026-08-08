@@ -10,6 +10,7 @@ const mockUncompleteNode = vi.fn();
 const mockNodesExport = vi.fn();
 const mockUpdateNode = vi.fn();
 const mockDeleteNode = vi.fn();
+const mockGetCalendarNodes = vi.fn();
 
 vi.mock("../api/workflowy-v1", () => ({
   WorkflowyClient: vi.fn().mockImplementation(() => ({
@@ -21,6 +22,7 @@ vi.mock("../api/workflowy-v1", () => ({
     nodesExport: mockNodesExport,
     updateNode: mockUpdateNode,
     deleteNode: mockDeleteNode,
+    getCalendarNodes: mockGetCalendarNodes,
   })),
 }));
 
@@ -247,6 +249,106 @@ describe("POST /api/send", () => {
 
     expect(res.status).toBe(200);
     expect(mockCreateNode).toHaveBeenCalledWith("today", "Hello", undefined);
+  });
+});
+
+describe("POST /api/send (calendar day)", () => {
+  beforeEach(() => {
+    mockCreateNode.mockReset();
+    mockCreateNode.mockResolvedValue({ item_id: "created-id" });
+  });
+
+  it.each(["tomorrow", "next_week", "2026-08-15"])(
+    "creates node under the given day key %s",
+    async (day) => {
+      const req = makeRequest("/api/send", {
+        method: "POST",
+        body: JSON.stringify({ targetType: "calendar", day, name: "Hello" }),
+      });
+      const res = await app.fetch(req, testEnv);
+      expect(res.status).toBe(200);
+      expect(mockCreateNode).toHaveBeenCalledWith(day, "Hello", undefined);
+    }
+  );
+
+  it("defaults to 'today' when day is omitted", async () => {
+    const req = makeRequest("/api/send", {
+      method: "POST",
+      body: JSON.stringify({ targetType: "calendar", name: "Hello" }),
+    });
+    await app.fetch(req, testEnv);
+    expect(mockCreateNode).toHaveBeenCalledWith("today", "Hello", undefined);
+  });
+
+  it("returns 400 for an invalid day key", async () => {
+    const req = makeRequest("/api/send", {
+      method: "POST",
+      body: JSON.stringify({ targetType: "calendar", day: "yesterday", name: "Hello" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+    expect(mockCreateNode).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/daily", () => {
+  beforeEach(() => {
+    mockGetCalendarNodes.mockReset();
+  });
+
+  it("returns day groups scanned from local_date", async () => {
+    mockGetCalendarNodes.mockImplementation(async (key: string) =>
+      key === "2026-08-08" ? [makeNode({ id: "d1", name: "Memo" })] : []
+    );
+    const req = makeRequest("/api/daily?local_date=2026-08-08");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as Array<{ date: string; items: Array<{ id: string }> }>;
+
+    expect(res.status).toBe(200);
+    expect(data).toHaveLength(1);
+    expect(data[0].date).toBe("2026-08-08");
+    expect(data[0].items[0].id).toBe("d1");
+  });
+
+  it("returns 400 without a date anchor", async () => {
+    const req = makeRequest("/api/daily");
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for a malformed anchor", async () => {
+    const req = makeRequest("/api/daily?before_date=08-01");
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/nodes/:id/children", () => {
+  beforeEach(() => {
+    mockGetNodes.mockReset();
+  });
+
+  it("returns children mapped to view items", async () => {
+    mockGetNodes.mockResolvedValue([
+      makeNode({ id: "c1", name: "A task", data: { layoutMode: "todo" }, completedAt: 5 }),
+      makeNode({ id: "c2", name: "A memo", note: "body" }),
+    ]);
+    const req = makeRequest("/api/nodes/parent-1/children");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { items: Array<{ id: string; todo: boolean; completed: boolean }> };
+
+    expect(res.status).toBe(200);
+    expect(mockGetNodes).toHaveBeenCalledWith("parent-1");
+    expect(data.items).toHaveLength(2);
+    expect(data.items[0]).toMatchObject({ id: "c1", todo: true, completed: true });
+    expect(data.items[1]).toMatchObject({ id: "c2", todo: false, completed: false });
+  });
+
+  it("returns 404 when the node no longer exists", async () => {
+    mockGetNodes.mockRejectedValue(new Error("Workflowy API error 404: not found"));
+    const req = makeRequest("/api/nodes/gone/children");
+    const res = await app.fetch(req, testEnv);
+    expect(res.status).toBe(404);
   });
 });
 

@@ -171,13 +171,18 @@ export function splitNoteDraft(text) {
 }
 
 // Default destination when compose opens: the place backing the current view.
-// The Tasks view has no place of its own, so the last explicit choice (or
-// Daily today) is kept.
-export function composeDestForView(view, places, lastDest) {
-  if (view === "daily") return { kind: "daily", day: null };
+// The Tasks view has no place of its own; it (like Daily) defaults to Daily
+// today.
+export function composeDestForView(view, places) {
   const place = places.find((p) => p.id === view && p.kind === "node");
   if (place) return { kind: "place", placeId: place.id };
-  return lastDest || { kind: "daily", day: null };
+  return { kind: "daily", day: null };
+}
+
+// Where a new node lands under its parent. Anything but an explicit "top"
+// (including legacy/unset settings) means bottom.
+export function normalizePosition(value) {
+  return value === "top" ? "top" : "bottom";
 }
 
 function pad2(n) {

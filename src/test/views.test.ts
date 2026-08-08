@@ -14,6 +14,7 @@ import {
   itemTimeLabel,
   splitNoteDraft,
   composeDestForView,
+  normalizePosition,
   dayPhrase,
   destLabel,
   destSendTarget,
@@ -182,15 +183,13 @@ describe("splitNoteDraft", () => {
 describe("compose destination", () => {
   it("defaults to the place backing the current view", () => {
     const places = placesFixture();
-    expect(composeDestForView("daily", places, null)).toEqual({ kind: "daily", day: null });
-    expect(composeDestForView("p1", places, null)).toEqual({ kind: "place", placeId: "p1" });
+    expect(composeDestForView("daily", places)).toEqual({ kind: "daily", day: null });
+    expect(composeDestForView("p1", places)).toEqual({ kind: "place", placeId: "p1" });
   });
 
-  it("keeps the last explicit choice on the Tasks view", () => {
+  it("defaults to Daily (today) on the Tasks view", () => {
     const places = placesFixture();
-    const last = { kind: "place", placeId: "p1" } as const;
-    expect(composeDestForView("tasks", places, last)).toBe(last);
-    expect(composeDestForView("tasks", places, null)).toEqual({ kind: "daily", day: null });
+    expect(composeDestForView("tasks", places)).toEqual({ kind: "daily", day: null });
   });
 
   it("phrases Daily days with the shared due-chip vocabulary", () => {
@@ -205,6 +204,13 @@ describe("compose destination", () => {
     expect(destLabel({ kind: "daily", day: null }, places, TODAY)).toBe("Daily · 今日（08/08）");
     expect(destLabel({ kind: "place", placeId: "p1" }, places, TODAY)).toBe("記事クリップ");
     expect(destLabel({ kind: "node", nodeId: "n9", name: "資料" }, places, TODAY)).toBe("資料");
+  });
+
+  it("normalizes the insert position, defaulting to bottom", () => {
+    expect(normalizePosition("top")).toBe("top");
+    expect(normalizePosition("bottom")).toBe("bottom");
+    expect(normalizePosition(undefined)).toBe("bottom");
+    expect(normalizePosition("weird")).toBe("bottom");
   });
 
   it("resolves destinations to send targets with explicit local dates", () => {

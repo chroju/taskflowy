@@ -39,11 +39,8 @@ export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: nu
 export function itemTimeLabel(createdAt: number): string;
 
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
-export function composeDestForView(
-  view: string,
-  places: Place[],
-  lastDest: ComposeDest | null
-): ComposeDest;
+export function composeDestForView(view: string, places: Place[]): ComposeDest;
+export function normalizePosition(value: unknown): "top" | "bottom";
 export function dayPhrase(day: string | null, todayStr?: string): string;
 export function destLabel(dest: ComposeDest | null, places: Place[], todayStr?: string): string;
 export function destSendTarget(

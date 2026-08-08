@@ -30,6 +30,7 @@ import {
   dailyCounts,
   itemTimeLabel,
   composeDestForView,
+  normalizePosition,
   destLabel,
   destSendTarget,
   splitNoteDraft,
@@ -43,11 +44,7 @@ import { urlBase64ToUint8Array } from "./push.js";
 
 let settings = loadSettings();
 // 場所（ビュー兼書き込み先）モデルへの移行。旧destinations設定から変換する。
-{
-  const migrated = migratePlaces(settings);
-  settings.places = migrated.places;
-  if (!settings.lastDest) settings.lastDest = migrated.lastDest;
-}
+settings.places = migratePlaces(settings).places;
 let isAuthenticated = false;
 let view = "tasks"; // 'tasks' | 'daily' | <place id>; restored in init()
 let tab = "today"; // Tasks ビュー内: 'today' | 'due' | 'nodes'
@@ -133,6 +130,7 @@ const composePicker = $("compose-picker");
 const btnPickerDone = $("btn-picker-done");
 const pickerDailyChips = $("picker-daily-chips");
 const pickerDateInput = $("picker-date-input");
+const pickerPosChips = $("picker-pos-chips");
 const pickerPlaces = $("picker-places");
 const pickerNodeTree = $("picker-node-tree");
 
@@ -1265,8 +1263,8 @@ function openAddSheet() {
   taskTimeInput.value = "";
   addDue = "today";
   composeMode = "task";
-  // 既定の書き込み先は表示中のビューに対応する場所
-  composeDest = composeDestForView(view, settings.places, settings.lastDest);
+  // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
+  composeDest = composeDestForView(view, settings.places);
   pickerCustomDay = false;
   composePicker.classList.add("hidden");
   composeMain.classList.remove("hidden");
@@ -1346,6 +1344,11 @@ function renderPicker() {
   pickerDateInput.classList.toggle("hidden", !(dayValue !== null && pickerCustomDay));
   if (dayValue !== null && pickerCustomDay) pickerDateInput.value = dayValue;
 
+  const pos = normalizePosition(settings.composePosition);
+  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.pos === pos);
+  });
+
   pickerPlaces.innerHTML = "";
   const nodePlaces = settings.places.filter((p) => p.kind === "node");
   if (!nodePlaces.length) {
@@ -1371,10 +1374,10 @@ function renderPicker() {
 // ---- 送信 ----
 
 // 送信直後の楽観反映: 読み込み済みの Daily グループに行を差し込む
-function insertDailyItem(date, item) {
+function insertDailyItem(date, item, position) {
   const group = dailyGroups.find((g) => g.date === date);
   if (group) {
-    group.items = [item, ...group.items];
+    group.items = position === "top" ? [item, ...group.items] : [...group.items, item];
   } else {
     const newGroup = { date, items: [item], hasMore: false };
     const at = dailyGroups.findIndex((g) => g.date < date);
@@ -1387,6 +1390,7 @@ function insertDailyItem(date, item) {
 
 function afterComposeSend(dest, { id, name, note, todo, due }) {
   const now = Math.floor(Date.now() / 1000);
+  const position = normalizePosition(settings.composePosition);
   const item = {
     id: id || `temp-${Date.now()}`,
     name,
@@ -1401,11 +1405,12 @@ function afterComposeSend(dest, { id, name, note, todo, due }) {
   if (!target) return;
 
   if (target.targetType === "calendar") {
-    insertDailyItem(target.day, item);
+    insertDailyItem(target.day, item, position);
   } else if (dest.kind === "place" && nodeViews[dest.placeId]) {
+    const items = nodeViews[dest.placeId].items;
     nodeViews[dest.placeId] = {
       ...nodeViews[dest.placeId],
-      items: [item, ...nodeViews[dest.placeId].items],
+      items: position === "top" ? [item, ...items] : [...items, item],
     };
     saveNodeViewsCache();
   }
@@ -1453,7 +1458,12 @@ async function handleAddTask() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({ ...target, name, layoutMode: "todo" }),
+      body: JSON.stringify({
+        ...target,
+        name,
+        position: normalizePosition(settings.composePosition),
+        layoutMode: "todo",
+      }),
     });
 
     const due = resolveAddDue();
@@ -1464,8 +1474,6 @@ async function handleAddTask() {
       });
     }
 
-    settings.lastDest = dest;
-    saveSettings();
     afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
     closeSheets();
     showToast("追加しました");
@@ -1493,10 +1501,13 @@ async function handleSendNote() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({ ...target, name: draft.name, note: draft.note || undefined }),
+      body: JSON.stringify({
+        ...target,
+        name: draft.name,
+        note: draft.note || undefined,
+        position: normalizePosition(settings.composePosition),
+      }),
     });
-    settings.lastDest = dest;
-    saveSettings();
     afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
     closeSheets();
     // ノートを Daily に書いたときは Daily ビューへ移動してその行を見せる
@@ -1588,6 +1599,14 @@ function bindEvents() {
       composeDest = { kind: "daily", day: pickerDateInput.value };
       renderPicker();
     }
+  });
+
+  pickerPosChips.querySelectorAll(".picker-pos").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      settings.composePosition = chip.dataset.pos;
+      saveSettings();
+      renderPicker();
+    });
   });
 
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
@@ -1836,9 +1855,6 @@ function deletePlace(id) {
   const place = settings.places.find((p) => p.id === id);
   if (!place || place.kind !== "node") return; // 組み込みの Tasks / Daily は削除不可
   settings.places = settings.places.filter((p) => p.id !== id);
-  if (settings.lastDest && settings.lastDest.kind === "place" && settings.lastDest.placeId === id) {
-    settings.lastDest = null;
-  }
   saveSettings();
   saveNodeViewsCache(); // 削除した場所のビューキャッシュを落とす
   renderPlaceList();

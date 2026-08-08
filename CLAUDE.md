@@ -94,11 +94,14 @@ npm run test:ui    # vitest UI起動
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/
-  任意日付、登録済みの場所、ノードツリー選択）。既定の送信先は表示中のビューに対応する場所。
+  任意日付、挿入位置 先頭/末尾、登録済みの場所、ノードツリー選択）。既定の送信先は表示中の
+  ビューに対応する場所（Tasks/DailyビューはDaily 今日）。挿入位置は`taskflowy_settings`の
+  `composePosition`に保存（既定は末尾）。
   ノートは最初の空行でname/noteに分割（`splitNoteDraft`）。「書き込み先の日付」と「期限」は
   別概念で、日付を指定するUIをそれぞれ1か所に限定している
 - **書き込み先**: `POST /api/send`。`targetType: "node" | "calendar"`。`calendar`は`day`キー
   （`today`/`tomorrow`/`next_week`/`YYYY-MM-DD`）を受け、Day NodeはWF側でオンデマンド作成。
+  `position: "top" | "bottom"`（任意）で親ノード内の挿入位置を指定できる。
   クライアントは常にローカル日付を明示して送る（サーバーTZに依存しない）
 - **通知**: 自前Web Push（VAPID）+ Cron Trigger（5分間隔、`wrangler.toml`の`[triggers]`）。
   時刻付きタスクは期日時刻を過ぎたら即時（1タスク=1通知）。朝`morningHour`

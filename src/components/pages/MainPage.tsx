@@ -189,6 +189,11 @@ export const MainPage: FC = () => (
               <button class="chip picker-day" data-day="custom">日付…</button>
             </div>
             <input id="picker-date-input" type="date" class="sheet-input-small picker-date hidden" />
+            <div class="picker-section-label">挿入位置</div>
+            <div class="sheet-chip-row" id="picker-pos-chips">
+              <button class="chip picker-pos" data-pos="bottom">末尾</button>
+              <button class="chip picker-pos" data-pos="top">先頭</button>
+            </div>
             <div class="picker-section-label">登録済みの場所</div>
             <div id="picker-places" class="picker-places"></div>
             <div class="picker-section-label">ノードを選ぶ</div>

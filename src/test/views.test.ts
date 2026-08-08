@@ -13,6 +13,8 @@ import {
   dailyCounts,
   itemTimeLabel,
   splitNoteDraft,
+  filterCompletedItems,
+  visibleDailyGroups,
   composeDestForView,
   initialComposeMode,
   normalizePosition,
@@ -156,6 +158,32 @@ describe("Daily view helpers", () => {
   it("formats the memo time column in local time", () => {
     const ts = Math.floor(new Date(2026, 7, 8, 9, 12).getTime() / 1000);
     expect(itemTimeLabel(ts)).toBe("09:12");
+  });
+});
+
+describe("completed-task filtering", () => {
+  const items = [
+    { id: "m1", todo: false, completed: false },
+    { id: "t1", todo: true, completed: false },
+    { id: "t2", todo: true, completed: true },
+  ];
+
+  it("hides completed todos but always keeps memos", () => {
+    expect(filterCompletedItems(items, false).map((i: { id: string }) => i.id)).toEqual(["m1", "t1"]);
+  });
+
+  it("keeps everything when showCompleted is on", () => {
+    expect(filterCompletedItems(items, true)).toBe(items);
+  });
+
+  it("drops day groups whose items are all hidden", () => {
+    const groups = [
+      { date: "2026-08-08", items: [{ id: "t1", todo: true, completed: false }], hasMore: false },
+      { date: "2026-08-07", items: [{ id: "t2", todo: true, completed: true }], hasMore: false },
+    ];
+    const visible = visibleDailyGroups(groups, false);
+    expect(visible.map((g: { date: string }) => g.date)).toEqual(["2026-08-08"]);
+    expect(visibleDailyGroups(groups, true)).toBe(groups);
   });
 });
 

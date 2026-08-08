@@ -29,6 +29,8 @@ import {
   dailyDateLabel,
   dailyCounts,
   itemTimeLabel,
+  filterCompletedItems,
+  visibleDailyGroups,
   composeDestForView,
   initialComposeMode,
   normalizePosition,
@@ -349,6 +351,21 @@ function render() {
   }
 }
 
+// 完了済みタスクの表示トグル（Daily / 登録ノード / ドリルダウン共通）。
+// 完了済みが 1 件も無いビューには出さない。
+function buildCompletedToggle(completedCount) {
+  const show = settings.showCompletedTasks === true;
+  const btn = document.createElement("button");
+  btn.className = "node-filter" + (show ? " active" : "");
+  btn.textContent = show ? "完了済みを隠す" : `完了済みを表示 (${completedCount})`;
+  btn.addEventListener("click", () => {
+    settings.showCompletedTasks = !show;
+    saveSettings();
+    render();
+  });
+  return btn;
+}
+
 function renderTasksView() {
   tabbar.classList.remove("hidden");
   const node = tab === "nodes" ? selectedNode() : null;
@@ -530,7 +547,11 @@ function renderDailyView() {
     return;
   }
 
-  const { items, days } = dailyCounts(dailyGroups);
+  const showCompleted = settings.showCompletedTasks === true;
+  const groups = visibleDailyGroups(dailyGroups, showCompleted);
+  const completedCount = dailyCounts(dailyGroups).items - dailyCounts(visibleDailyGroups(dailyGroups, false)).items;
+
+  const { items, days } = dailyCounts(groups);
   screenCount.textContent = `${items} 件 / ${days} 日`;
   taskList.innerHTML = "";
 
@@ -541,8 +562,18 @@ function renderDailyView() {
     return;
   }
 
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
+
+  if (!groups.length) {
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "未完了のタスクはありません";
+    taskList.appendChild(empty);
+    return;
+  }
+
   const today = localDateString();
-  for (const group of dailyGroups) {
+  for (const group of groups) {
     const header = document.createElement("div");
     header.className = "group-header date" + (group.date === today ? " today" : "");
     header.innerHTML = '<span class="group-label"></span><span class="group-count"></span>';
@@ -637,13 +668,27 @@ function renderNodeView() {
     return;
   }
 
-  screenCount.textContent = `${entry.items.length} 件`;
+  const showCompleted = settings.showCompletedTasks === true;
+  const items = filterCompletedItems(entry.items, showCompleted);
+  const completedCount = entry.items.length - filterCompletedItems(entry.items, false).length;
+
+  screenCount.textContent = `${items.length} 件`;
   if (!entry.items.length) {
     taskList.innerHTML = '<p class="list-empty">まだ何もありません</p>';
     return;
   }
 
-  for (const item of entry.items) {
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount));
+
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "未完了のタスクはありません";
+    taskList.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
     taskList.appendChild(buildItemRow(item, { showTime: false, origin: view }));
   }
 }
@@ -663,12 +708,18 @@ function renderList(node) {
   }
 
   const today = localDateString();
-  const groups = node ? groupNodeTasks(node.tasks) : groupTasksForView(tasksState, tab, today);
+  const showCompleted = settings.showCompletedTasks === true;
+  const groups = node ? groupNodeTasks(node.tasks, showCompleted) : groupTasksForView(tasksState, tab, today);
   const openCount = groups.reduce((n, g) => n + g.tasks.filter((t) => !t.completed).length, 0);
   screenCount.textContent = `${openCount} 件`;
 
+  if (node && node.done > 0) taskList.appendChild(buildCompletedToggle(node.done));
+
   if (!groups.length) {
-    taskList.innerHTML = '<p class="list-empty">タスクはありません</p>';
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "タスクはありません";
+    taskList.appendChild(empty);
     return;
   }
 

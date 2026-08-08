@@ -38,6 +38,15 @@ export function dailyDateLabel(dateStr: string): string;
 export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: number };
 export function itemTimeLabel(createdAt: number): string;
 
+export interface ViewItemLike {
+  todo?: boolean;
+  completed?: boolean;
+  [key: string]: unknown;
+}
+
+export function filterCompletedItems<T extends ViewItemLike>(items: T[], showCompleted: boolean): T[];
+export function visibleDailyGroups<G extends DailyGroupLike>(groups: G[], showCompleted: boolean): G[];
+
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";

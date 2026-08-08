@@ -346,6 +346,13 @@ describe("groupNodeTasks", () => {
     const groups = groupNodeTasks([task({ id: "a" })]);
     expect(groups.map((g: { label: string }) => g.label)).toEqual(["未完了"]);
   });
+
+  it("omits the 完了 group when showCompleted is false", () => {
+    const tasks = [task({ id: "a" }), task({ id: "b", completed: true })];
+    const groups = groupNodeTasks(tasks, false);
+    expect(groups.map((g: { label: string }) => g.label)).toEqual(["未完了"]);
+    expect(groups[0].tasks.map((t: { id: string }) => t.id)).toEqual(["a"]);
+  });
 });
 
 describe("donutDash", () => {

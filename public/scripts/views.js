@@ -143,6 +143,24 @@ export function itemTimeLabel(createdAt) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// ---- Completed-task filtering (Daily / registered-node views) ----
+
+// Hides completed todos unless showCompleted. Memos (non-todo items) are
+// always shown -- completion is a task concept.
+export function filterCompletedItems(items, showCompleted) {
+  if (showCompleted) return items;
+  return items.filter((item) => !item.todo || !item.completed);
+}
+
+// Daily groups after the completed filter; a day whose items are all hidden
+// loses its heading too (same rule as days with no notes at all).
+export function visibleDailyGroups(groups, showCompleted) {
+  if (showCompleted) return groups;
+  return groups
+    .map((g) => ({ ...g, items: filterCompletedItems(g.items, false) }))
+    .filter((g) => g.items.length > 0);
+}
+
 // ---- Compose ----
 
 // Compose destination:

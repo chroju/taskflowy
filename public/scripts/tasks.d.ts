@@ -53,7 +53,7 @@ export function filterFinishedNodes<T extends TaskLike>(
   nodes: NodeSummary<T>[],
   showFinished: boolean
 ): NodeSummary<T>[];
-export function groupNodeTasks<T extends TaskLike>(tasks: T[]): TaskGroup<T>[];
+export function groupNodeTasks<T extends TaskLike>(tasks: T[], showCompleted?: boolean): TaskGroup<T>[];
 export function donutDash(done: number, total: number): string;
 
 export function workflowyUrl(nodeId: string): string;

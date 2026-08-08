@@ -201,12 +201,13 @@ export function filterFinishedNodes(nodes, showFinished) {
 }
 
 // Splits a single node's tasks into 未完了 / 完了 groups (empty omitted).
-export function groupNodeTasks(tasks) {
+// showCompleted=false drops the 完了 group entirely.
+export function groupNodeTasks(tasks, showCompleted = true) {
   const open = tasks.filter((t) => !t.completed);
   const done = tasks.filter((t) => t.completed);
   const groups = [];
   if (open.length) groups.push({ key: "open", label: "未完了", overdue: false, tasks: open });
-  if (done.length) groups.push({ key: "done", label: "完了", overdue: false, tasks: done });
+  if (showCompleted && done.length) groups.push({ key: "done", label: "完了", overdue: false, tasks: done });
   return groups;
 }
 

@@ -940,6 +940,250 @@ button.sheet-prop-value {
   border-color: var(--accent);
 }
 
+/* ---- Compose sheet ---- */
+
+.compose-modebar {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-tab);
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+
+.compose-dest-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.compose-dest-label {
+  flex: none;
+  width: 76px;
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-dest-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--base);
+  color: var(--text);
+  font: 400 14px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.compose-dest-icon {
+  flex: none;
+  display: flex;
+  color: var(--accent-soft);
+}
+
+.compose-dest-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-dest-chevron {
+  margin-left: auto;
+  color: var(--subtext0);
+  font-size: 11px;
+}
+
+.compose-due-label {
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+  margin-right: 2px;
+}
+
+.compose-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.compose-footer-note {
+  flex: 1;
+  font: 400 12.5px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-submit {
+  flex: none;
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--base);
+  font: 600 14px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.compose-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.compose-textarea {
+  width: 100%;
+  min-height: 252px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 400 17px/1.7 var(--font-sans);
+  outline: none;
+  resize: none;
+}
+
+.compose-textarea::placeholder {
+  color: var(--subtext0);
+}
+
+.compose-note-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.compose-dest-small {
+  flex: none;
+  max-width: 45%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--subtext1);
+  font: 500 12.5px/1.2 var(--font-sans);
+  cursor: pointer;
+}
+
+.compose-dest-small .compose-dest-icon {
+  color: var(--subtext1);
+}
+
+.compose-note-hint {
+  flex: 1;
+  font: 400 11.5px/1.3 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.compose-note-toolbar .compose-submit {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+
+/* ---- Compose: 送信先セレクタ ---- */
+
+.compose-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 500 14px/1 var(--font-sans);
+  color: var(--text);
+}
+
+.picker-done {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 14px/1 var(--font-sans);
+  cursor: pointer;
+  padding: 6px 0 6px 12px;
+}
+
+.compose-picker-scroll {
+  max-height: 430px;
+  overflow-y: auto;
+}
+
+.picker-section-label {
+  margin: 16px 0 8px;
+  font: 500 13px/1 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.picker-day {
+  padding: 10px 15px;
+}
+
+.picker-date {
+  margin-top: 10px;
+  flex: none;
+  width: 100%;
+}
+
+.picker-places {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.picker-place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: 400 15px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-place:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.picker-place.selected {
+  border-color: rgba(230, 232, 236, 0.5);
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.picker-place .compose-dest-icon {
+  color: var(--subtext1);
+}
+
+.picker-place.selected .compose-dest-icon {
+  color: var(--accent-soft);
+}
+
+.picker-place-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-check {
+  margin-left: auto;
+  color: var(--accent-soft);
+}
+
+.picker-empty {
+  font: 400 13px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
 /* ---- Chips / pills ---- */
 
 .chip {

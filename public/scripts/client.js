@@ -1,6 +1,8 @@
 import { stripHtml } from "./utils.js";
 import {
   localDateString,
+  addDays,
+  nextMonday,
   normalizeTitle,
   formatDueShort,
   formatDueDetail,
@@ -27,6 +29,10 @@ import {
   dailyDateLabel,
   dailyCounts,
   itemTimeLabel,
+  composeDestForView,
+  destLabel,
+  destSendTarget,
+  splitNoteDraft,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -103,10 +109,29 @@ const btnSheetSaveNote = $("btn-sheet-save-note");
 const btnSheetCancelNote = $("btn-sheet-cancel-note");
 
 const sheetAddEl = $("sheet-add");
+const composeMain = $("compose-main");
+const composeModebar = $("compose-modebar");
+const composeDestRow = $("compose-dest-row");
+const btnComposeDest = $("btn-compose-dest");
+const composeDestIcon = $("compose-dest-icon");
+const composeDestName = $("compose-dest-name");
+const composeTaskBody = $("compose-task-body");
+const composeNoteBody = $("compose-note-body");
+const noteInput = $("note-input");
+const btnComposeDestSmall = $("btn-compose-dest-small");
+const composeDestSmallIcon = $("compose-dest-small-icon");
+const composeDestSmallName = $("compose-dest-small-name");
+const btnSaveNote = $("btn-save-note");
 const taskNameInput = $("task-name-input");
 const taskDateInput = $("task-date-input");
 const taskTimeInput = $("task-time-input");
 const btnSaveTask = $("btn-save-task");
+const composePicker = $("compose-picker");
+const btnPickerDone = $("btn-picker-done");
+const pickerDailyChips = $("picker-daily-chips");
+const pickerDateInput = $("picker-date-input");
+const pickerPlaces = $("picker-places");
+const pickerNodeTree = $("picker-node-tree");
 
 const sheetDeleteEl = $("sheet-delete");
 const sheetDeleteTitle = $("sheet-delete-title");
@@ -137,7 +162,6 @@ const btnSaveDestination = $("btn-save-destination");
 const btnCancelDestination = $("btn-cancel-destination");
 
 let selectedTreeNodeId = null;
-let nodeTreePath = []; // [{ id, name }] breadcrumb trail
 let pushSubscribed = false;
 let reminderHour = null;
 
@@ -1216,16 +1240,53 @@ function confirmDelete() {
   run();
 }
 
-// ==================== Add sheet ====================
+// ==================== Compose sheet ====================
+
+const ICON_CALENDAR = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+const ICON_FOLDER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+
+function destIconSvg(dest, size = 16) {
+  const svg = !dest || dest.kind === "daily" ? ICON_CALENDAR : ICON_FOLDER;
+  return svg.replace('width="16" height="16"', `width="${size}" height="${size}"`);
+}
+
+let composeMode = "task"; // 'task' | 'note'
+let composeDest = null; // views.js の ComposeDest
+let pickerCustomDay = false; // セレクタで「日付…」チップを選んでいるか
+let composeTreeLoaded = false;
 
 function openAddSheet() {
   taskNameInput.value = "";
+  noteInput.value = "";
   taskDateInput.value = "";
   taskTimeInput.value = "";
   addDue = "today";
+  composeMode = "task";
+  // 既定の書き込み先は表示中のビューに対応する場所
+  composeDest = composeDestForView(view, settings.places, settings.lastDest);
+  pickerCustomDay = false;
+  composePicker.classList.add("hidden");
+  composeMain.classList.remove("hidden");
+  renderCompose();
   renderDueChips();
   sheetAddEl.classList.remove("hidden");
   taskNameInput.focus();
+}
+
+function renderCompose() {
+  composeModebar.querySelectorAll(".tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === composeMode);
+  });
+  const isTask = composeMode === "task";
+  composeDestRow.classList.toggle("hidden", !isTask);
+  composeTaskBody.classList.toggle("hidden", !isTask);
+  composeNoteBody.classList.toggle("hidden", isTask);
+
+  const label = destLabel(composeDest, settings.places);
+  composeDestName.textContent = label;
+  composeDestIcon.innerHTML = destIconSvg(composeDest, 16);
+  composeDestSmallName.textContent = label;
+  composeDestSmallIcon.innerHTML = destIconSvg(composeDest, 13);
 }
 
 function renderDueChips() {
@@ -1248,15 +1309,140 @@ function resolveAddDue() {
   return due ? { date: due.date, time: null } : null;
 }
 
+// ---- 送信先セレクタ（シート内で本体と入れ替える） ----
+
+function openPicker() {
+  composeMain.classList.add("hidden");
+  composePicker.classList.remove("hidden");
+  if (!composeTreeLoaded) {
+    composeTreeLoaded = true;
+    composeNodeTree.load();
+  }
+  renderPicker();
+}
+
+function closePicker() {
+  composePicker.classList.add("hidden");
+  composeMain.classList.remove("hidden");
+  renderCompose();
+  (composeMode === "task" ? taskNameInput : noteInput).focus();
+}
+
+function renderPicker() {
+  const todayStr = localDateString();
+  // 書き込み先がノードのときは日付の概念が無いので Daily チップは選択されない
+  const dayValue = composeDest && composeDest.kind === "daily" ? composeDest.day || todayStr : null;
+  const chipDates = { today: todayStr, tomorrow: addDays(todayStr, 1), week: nextMonday(todayStr) };
+
+  pickerDailyChips.querySelectorAll(".picker-day").forEach((chip) => {
+    const key = chip.dataset.day;
+    const active =
+      dayValue !== null && (key === "custom" ? pickerCustomDay : !pickerCustomDay && chipDates[key] === dayValue);
+    chip.classList.toggle("active", active);
+  });
+  pickerDateInput.classList.toggle("hidden", !(dayValue !== null && pickerCustomDay));
+  if (dayValue !== null && pickerCustomDay) pickerDateInput.value = dayValue;
+
+  pickerPlaces.innerHTML = "";
+  const nodePlaces = settings.places.filter((p) => p.kind === "node");
+  if (!nodePlaces.length) {
+    pickerPlaces.innerHTML = '<p class="picker-empty">登録済みの場所はありません</p>';
+  }
+  for (const place of nodePlaces) {
+    const selected = composeDest && composeDest.kind === "place" && composeDest.placeId === place.id;
+    const btn = document.createElement("button");
+    btn.className = "picker-place" + (selected ? " selected" : "");
+    btn.innerHTML =
+      `<span class="compose-dest-icon">${ICON_FOLDER}</span><span class="picker-place-name"></span>` +
+      (selected ? '<span class="picker-check">✓</span>' : "");
+    btn.querySelector(".picker-place-name").textContent = place.name;
+    btn.addEventListener("click", () => {
+      composeDest = { kind: "place", placeId: place.id };
+      pickerCustomDay = false;
+      renderPicker();
+    });
+    pickerPlaces.appendChild(btn);
+  }
+}
+
+// ---- 送信 ----
+
+// 送信直後の楽観反映: 読み込み済みの Daily グループに行を差し込む
+function insertDailyItem(date, item) {
+  const group = dailyGroups.find((g) => g.date === date);
+  if (group) {
+    group.items = [item, ...group.items];
+  } else {
+    const newGroup = { date, items: [item], hasMore: false };
+    const at = dailyGroups.findIndex((g) => g.date < date);
+    if (at >= 0) dailyGroups.splice(at, 0, newGroup);
+    else if (!dailyHasMore) dailyGroups.push(newGroup);
+    // else: 未読み込みの過去領域なので差し込まない（再取得時に現れる）
+  }
+  saveDailyCache();
+}
+
+function afterComposeSend(dest, { id, name, note, todo, due }) {
+  const now = Math.floor(Date.now() / 1000);
+  const item = {
+    id: id || `temp-${Date.now()}`,
+    name,
+    plainName: name,
+    note: note || null,
+    todo,
+    completed: false,
+    due: due || null,
+    createdAt: now,
+  };
+  const target = destSendTarget(dest, settings.places);
+  if (!target) return;
+
+  if (target.targetType === "calendar") {
+    insertDailyItem(target.day, item);
+  } else if (dest.kind === "place" && nodeViews[dest.placeId]) {
+    nodeViews[dest.placeId] = {
+      ...nodeViews[dest.placeId],
+      items: [item, ...nodeViews[dest.placeId].items],
+    };
+    saveNodeViewsCache();
+  }
+
+  if (todo) {
+    const parentName =
+      dest.kind === "daily"
+        ? "Daily"
+        : dest.kind === "place"
+          ? settings.places.find((p) => p.id === dest.placeId)?.name
+          : dest.name;
+    tasksState = [
+      {
+        id: item.id,
+        name,
+        plainName: name,
+        note: item.note,
+        parentId: target.parentId || null,
+        parentPath: parentName ? [parentName] : [],
+        createdAt: now,
+        due: item.due,
+        completed: false,
+      },
+      ...tasksState,
+    ];
+    setTasksCache(tasksState);
+  }
+  render();
+}
+
 async function handleAddTask() {
   const name = taskNameInput.value.trim();
   if (!name) {
     closeSheets();
     return;
   }
-  const dest = settings.destinations.find((d) => d.id === settings.selectedDestinationId);
-  if (!dest) {
-    showToast("保存先が未設定です。設定から追加してください。", true);
+  const dest = composeDest;
+  const target = destSendTarget(dest, settings.places);
+  if (!target) {
+    showToast("書き込み先を選択してください", true);
     return;
   }
 
@@ -1264,12 +1450,7 @@ async function handleAddTask() {
   try {
     const result = await apiRequest("/send", {
       method: "POST",
-      body: JSON.stringify({
-        targetType: dest.type,
-        parentId: dest.type === "node" ? dest.nodeId : undefined,
-        name,
-        layoutMode: "todo",
-      }),
+      body: JSON.stringify({ ...target, name, layoutMode: "todo" }),
     });
 
     const due = resolveAddDue();
@@ -1280,26 +1461,48 @@ async function handleAddTask() {
       });
     }
 
-    const newTask = {
-      id: result.item_id || `temp-${Date.now()}`,
-      name,
-      plainName: name,
-      note: null,
-      parentId: dest.type === "node" ? dest.nodeId : null,
-      parentPath: dest.type === "node" ? [dest.name] : [],
-      createdAt: Math.floor(Date.now() / 1000),
-      due,
-      completed: false,
-    };
-    tasksState = [newTask, ...tasksState];
-    setTasksCache(tasksState);
-    render();
+    settings.lastDest = dest;
+    saveSettings();
+    afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
     closeSheets();
     showToast("追加しました");
   } catch (e) {
     showToast(e.message, true);
   } finally {
     btnSaveTask.disabled = false;
+  }
+}
+
+async function handleSendNote() {
+  const draft = splitNoteDraft(noteInput.value);
+  if (!draft) {
+    closeSheets();
+    return;
+  }
+  const dest = composeDest;
+  const target = destSendTarget(dest, settings.places);
+  if (!target) {
+    showToast("書き込み先を選択してください", true);
+    return;
+  }
+
+  btnSaveNote.disabled = true;
+  try {
+    const result = await apiRequest("/send", {
+      method: "POST",
+      body: JSON.stringify({ ...target, name: draft.name, note: draft.note || undefined }),
+    });
+    settings.lastDest = dest;
+    saveSettings();
+    afterComposeSend(dest, { id: result.item_id, name: draft.name, note: draft.note, todo: false, due: null });
+    closeSheets();
+    // ノートを Daily に書いたときは Daily ビューへ移動してその行を見せる
+    if (dest.kind === "daily" && view !== "daily") switchView("daily");
+    showToast("追加しました");
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btnSaveNote.disabled = false;
   }
 }
 
@@ -1345,6 +1548,42 @@ function bindEvents() {
     if (e.key === "Enter") {
       e.preventDefault();
       handleAddTask();
+    }
+  });
+
+  // compose: モード切り替え / 送信先セレクタ / ノート送信
+  composeModebar.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      composeMode = btn.dataset.mode;
+      renderCompose();
+      (composeMode === "task" ? taskNameInput : noteInput).focus();
+    });
+  });
+  btnComposeDest.addEventListener("click", openPicker);
+  btnComposeDestSmall.addEventListener("click", openPicker);
+  btnPickerDone.addEventListener("click", closePicker);
+  btnSaveNote.addEventListener("click", handleSendNote);
+
+  pickerDailyChips.querySelectorAll(".picker-day").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const key = chip.dataset.day;
+      const todayStr = localDateString();
+      if (key === "custom") {
+        pickerCustomDay = true;
+        composeDest = { kind: "daily", day: pickerDateInput.value || todayStr };
+      } else {
+        pickerCustomDay = false;
+        const day =
+          key === "today" ? null : key === "tomorrow" ? addDays(todayStr, 1) : nextMonday(todayStr);
+        composeDest = { kind: "daily", day };
+      }
+      renderPicker();
+    });
+  });
+  pickerDateInput.addEventListener("input", () => {
+    if (pickerDateInput.value) {
+      composeDest = { kind: "daily", day: pickerDateInput.value };
+      renderPicker();
     }
   });
 
@@ -1515,10 +1754,9 @@ function bindSettingsEvents() {
   btnAddDestination.addEventListener("click", () => {
     panelAddDest.classList.remove("hidden");
     selectedTreeNodeId = null;
-    nodeTreePath = [];
     destNameInput.value = "";
     setDestType("node");
-    loadNodeTree();
+    settingsNodeTree.reset();
   });
 
   destTypeRadios.forEach((radio) => {
@@ -1625,116 +1863,157 @@ function saveDestination() {
   showToast("保存先を追加しました");
 }
 
-// ==================== Node tree (destination picker) ====================
+// ==================== Node tree picker ====================
 
-async function loadNodeTree(parentId) {
-  nodeTree.innerHTML = '<div class="tree-empty"><div class="spinner"></div></div>';
-  try {
-    const pid = parentId || "None";
-    const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
-    renderNodeTree(nodes);
-  } catch (e) {
-    nodeTree.innerHTML = `<p class="tree-empty">${escapeText(e.message)}</p>`;
+// 階層をたどってノードを 1 つ選ぶピッカー。設定の「場所を追加」と compose の
+// 送信先セレクタで使う（それぞれ独立した状態を持つ）。
+function createNodeTreePicker(container, { onSelect }) {
+  let path = []; // [{ id, name }] breadcrumb trail
+  let selectedId = null;
+
+  async function load(parentId) {
+    container.innerHTML = '<div class="tree-empty"><div class="spinner"></div></div>';
+    try {
+      const pid = parentId || "None";
+      const nodes = await apiRequest(`/nodes?parent_id=${encodeURIComponent(pid)}`);
+      renderTree(nodes);
+    } catch (e) {
+      container.innerHTML = `<p class="tree-empty">${escapeText(e.message)}</p>`;
+    }
   }
-}
 
-function renderNodeTree(nodes) {
-  nodeTree.innerHTML = "";
+  function select(id, name) {
+    selectedId = id;
+    onSelect(id ? { id, name } : null);
+  }
 
-  // Breadcrumb navigation
-  if (nodeTreePath.length > 0) {
-    const breadcrumb = document.createElement("div");
-    breadcrumb.className = "node-tree-breadcrumb";
+  function renderTree(nodes) {
+    container.innerHTML = "";
 
-    const rootLink = document.createElement("span");
-    rootLink.className = "breadcrumb-link";
-    rootLink.textContent = "Home";
-    rootLink.addEventListener("click", () => {
-      nodeTreePath = [];
-      selectedTreeNodeId = null;
-      destNameInput.value = "";
-      loadNodeTree();
-    });
-    breadcrumb.appendChild(rootLink);
+    // Breadcrumb navigation
+    if (path.length > 0) {
+      const breadcrumb = document.createElement("div");
+      breadcrumb.className = "node-tree-breadcrumb";
 
-    for (let i = 0; i < nodeTreePath.length; i++) {
-      const sep = document.createElement("span");
-      sep.className = "breadcrumb-sep";
-      sep.textContent = " / ";
-      breadcrumb.appendChild(sep);
+      const rootLink = document.createElement("span");
+      rootLink.className = "breadcrumb-link";
+      rootLink.textContent = "Home";
+      rootLink.addEventListener("click", () => {
+        path = [];
+        select(null, "");
+        load();
+      });
+      breadcrumb.appendChild(rootLink);
 
-      const crumb = nodeTreePath[i];
-      if (i < nodeTreePath.length - 1) {
-        const link = document.createElement("span");
-        link.className = "breadcrumb-link";
-        link.textContent = crumb.name;
-        link.addEventListener("click", () => {
-          nodeTreePath = nodeTreePath.slice(0, i + 1);
-          selectedTreeNodeId = crumb.id;
-          destNameInput.value = crumb.name;
-          loadNodeTree(crumb.id);
-        });
-        breadcrumb.appendChild(link);
-      } else {
-        const current = document.createElement("span");
-        current.className = "breadcrumb-current";
-        current.textContent = crumb.name;
-        breadcrumb.appendChild(current);
+      for (let i = 0; i < path.length; i++) {
+        const sep = document.createElement("span");
+        sep.className = "breadcrumb-sep";
+        sep.textContent = " / ";
+        breadcrumb.appendChild(sep);
+
+        const crumb = path[i];
+        if (i < path.length - 1) {
+          const link = document.createElement("span");
+          link.className = "breadcrumb-link";
+          link.textContent = crumb.name;
+          link.addEventListener("click", () => {
+            path = path.slice(0, i + 1);
+            select(crumb.id, crumb.name);
+            load(crumb.id);
+          });
+          breadcrumb.appendChild(link);
+        } else {
+          const current = document.createElement("span");
+          current.className = "breadcrumb-current";
+          current.textContent = crumb.name;
+          breadcrumb.appendChild(current);
+        }
       }
+
+      container.appendChild(breadcrumb);
     }
 
-    nodeTree.appendChild(breadcrumb);
+    if (!nodes.length) {
+      const msg = document.createElement("p");
+      msg.className = "tree-empty";
+      msg.textContent = "子ノードがありません";
+      container.appendChild(msg);
+      return;
+    }
+
+    for (const node of nodes) {
+      const text = normalizeTitle(node.name) || "(無題)";
+      const div = document.createElement("div");
+      const isCompleted = node.completedAt !== null;
+      div.className =
+        "node-tree-item" +
+        (selectedId === node.id ? " selected" : "") +
+        (isCompleted ? " completed" : "");
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "node-tree-item-name";
+      nameSpan.textContent = text;
+      div.appendChild(nameSpan);
+
+      const drillBtn = document.createElement("span");
+      drillBtn.className = "node-tree-drill";
+      drillBtn.textContent = "▶";
+      drillBtn.title = "子ノードを表示";
+      div.appendChild(drillBtn);
+
+      // Click name to select
+      nameSpan.addEventListener("click", (e) => {
+        e.stopPropagation();
+        select(node.id, text);
+        container.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
+        div.classList.add("selected");
+      });
+
+      // Click drill button to navigate into children
+      drillBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        select(node.id, text);
+        path.push({ id: node.id, name: text });
+        load(node.id);
+      });
+
+      container.appendChild(div);
+    }
   }
 
-  if (!nodes.length) {
-    const msg = document.createElement("p");
-    msg.className = "tree-empty";
-    msg.textContent = "子ノードがありません";
-    nodeTree.appendChild(msg);
-    return;
+  function reset() {
+    path = [];
+    selectedId = null;
+    return load();
   }
 
-  for (const node of nodes) {
-    const text = normalizeTitle(node.name) || "(無題)";
-    const div = document.createElement("div");
-    const isCompleted = node.completedAt !== null;
-    div.className =
-      "node-tree-item" +
-      (selectedTreeNodeId === node.id ? " selected" : "") +
-      (isCompleted ? " completed" : "");
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "node-tree-item-name";
-    nameSpan.textContent = text;
-    div.appendChild(nameSpan);
-
-    const drillBtn = document.createElement("span");
-    drillBtn.className = "node-tree-drill";
-    drillBtn.textContent = "▶";
-    drillBtn.title = "子ノードを表示";
-    div.appendChild(drillBtn);
-
-    // Click name to select
-    nameSpan.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedTreeNodeId = node.id;
-      destNameInput.value = text;
-      nodeTree.querySelectorAll(".node-tree-item").forEach((el) => el.classList.remove("selected"));
-      div.classList.add("selected");
-    });
-
-    // Click drill button to navigate into children
-    drillBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectedTreeNodeId = node.id;
-      destNameInput.value = text;
-      nodeTreePath.push({ id: node.id, name: text });
-      loadNodeTree(node.id);
-    });
-
-    nodeTree.appendChild(div);
-  }
+  return {
+    load,
+    reset,
+    get selectedId() {
+      return selectedId;
+    },
+  };
 }
+
+// 設定「場所を追加」用: 選択で表示名の初期値も埋める
+const settingsNodeTree = createNodeTreePicker(nodeTree, {
+  onSelect: (sel) => {
+    selectedTreeNodeId = sel ? sel.id : null;
+    destNameInput.value = sel ? sel.name : "";
+  },
+});
+
+// compose 送信先セレクタ用
+const composeNodeTree = createNodeTreePicker(pickerNodeTree, {
+  onSelect: (sel) => {
+    if (sel) {
+      composeDest = { kind: "node", nodeId: sel.id, name: sel.name };
+      pickerCustomDay = false;
+      renderPicker();
+    }
+  },
+});
 
 // ==================== Toast ====================
 

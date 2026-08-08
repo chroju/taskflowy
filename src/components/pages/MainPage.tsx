@@ -117,21 +117,85 @@ export const MainPage: FC = () => (
       </div>
     </div>
 
-    {/* 追加シート（FAB） */}
+    {/* compose シート（FAB）。タスク / ノートの 2 モード + 送信先セレクタ */}
     <div id="sheet-add" class="sheet hidden">
       <div class="sheet-backdrop" data-close-sheet="sheet-add"></div>
       <div class="sheet-panel sheet-panel-add">
-        <input id="task-name-input" type="text" class="sheet-input" placeholder="新しいタスク" autocomplete="off" />
-        <div class="sheet-chip-row">
-          <button class="chip due-chip" data-due="today">今日</button>
-          <button class="chip due-chip" data-due="tomorrow">明日</button>
-          <button class="chip due-chip" data-due="week">来週</button>
-          <button class="chip due-chip" data-due="none">期限なし</button>
+        <div class="sheet-grabber"></div>
+
+        {/* 本体 */}
+        <div id="compose-main">
+          <div class="compose-modebar" id="compose-modebar">
+            <button class="tab" data-mode="task">タスク</button>
+            <button class="tab" data-mode="note">ノート</button>
+          </div>
+
+          {/* 書き込み先（タスクモードのみここに出す。ノートモードは下端ツールバーに畳む） */}
+          <div id="compose-dest-row" class="compose-dest-row">
+            <span class="compose-dest-label">書き込み先</span>
+            <button id="btn-compose-dest" class="compose-dest-btn">
+              <span id="compose-dest-icon" class="compose-dest-icon"></span>
+              <span id="compose-dest-name" class="compose-dest-name"></span>
+              <span class="compose-dest-chevron">▾</span>
+            </button>
+          </div>
+
+          {/* タスクモード */}
+          <div id="compose-task-body">
+            <input id="task-name-input" type="text" class="sheet-input" placeholder="新しいタスク" autocomplete="off" />
+            <div class="sheet-chip-row">
+              <span class="compose-due-label">期限</span>
+              <button class="chip due-chip" data-due="today">今日</button>
+              <button class="chip due-chip" data-due="tomorrow">明日</button>
+              <button class="chip due-chip" data-due="week">来週</button>
+              <button class="chip due-chip" data-due="none">期限なし</button>
+            </div>
+            <div class="sheet-custom-row">
+              <input id="task-date-input" type="date" class="sheet-input-small" />
+              <input id="task-time-input" type="time" class="sheet-input-small" />
+            </div>
+            <div class="compose-footer">
+              <span class="compose-footer-note">書き込み先の日付と、タスクの期限は別ものです。</span>
+              <button id="btn-save-task" class="compose-submit">追加</button>
+            </div>
+          </div>
+
+          {/* ノートモード: 書くことに専念させる枠のないテキストエリア */}
+          <div id="compose-note-body" class="hidden">
+            <textarea id="note-input" class="compose-textarea" placeholder="書き留める…"></textarea>
+            <div class="compose-note-toolbar">
+              <button id="btn-compose-dest-small" class="compose-dest-small">
+                <span id="compose-dest-small-icon" class="compose-dest-icon small"></span>
+                <span id="compose-dest-small-name" class="compose-dest-name"></span>
+              </button>
+              <span class="compose-note-hint">空行より下がノート</span>
+              <button id="btn-save-note" class="compose-submit">追加</button>
+            </div>
+          </div>
         </div>
-        <div class="sheet-custom-row">
-          <input id="task-date-input" type="date" class="sheet-input-small" />
-          <input id="task-time-input" type="time" class="sheet-input-small" />
-          <button id="btn-save-task" class="chip-submit">追加</button>
+
+        {/* 送信先セレクタ（シート内で本体と入れ替わる） */}
+        <div id="compose-picker" class="hidden">
+          <div class="compose-picker-header">
+            <span>書き込み先</span>
+            <button id="btn-picker-done" class="picker-done">完了</button>
+          </div>
+          <div class="compose-picker-scroll">
+            <div class="picker-section-label">Daily</div>
+            <div class="sheet-chip-row" id="picker-daily-chips">
+              <button class="chip picker-day" data-day="today">今日</button>
+              <button class="chip picker-day" data-day="tomorrow">明日</button>
+              <button class="chip picker-day" data-day="week">来週</button>
+              <button class="chip picker-day" data-day="custom">日付…</button>
+            </div>
+            <input id="picker-date-input" type="date" class="sheet-input-small picker-date hidden" />
+            <div class="picker-section-label">登録済みの場所</div>
+            <div id="picker-places" class="picker-places"></div>
+            <div class="picker-section-label">ノードを選ぶ</div>
+            <div id="picker-node-tree" class="node-tree">
+              <p class="tree-empty">読み込み中...</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

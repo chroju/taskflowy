@@ -28,7 +28,8 @@ import {
   ensureVisibleView,
   stepView,
   resolveBarStep,
-  dailyDateLabel,
+  dailyDateParts,
+  dailyNoteTitle,
   dailyCounts,
   itemTimeLabel,
   filterCompletedItems,
@@ -68,6 +69,7 @@ let lastSyncMs = null;
 let sheetTask = null; // task/item shown in the detail sheet
 let sheetOrigin = "tasks"; // どのビューの行か: 'tasks' | 'daily' | <place id>
 let sheetIsMemo = false; // メモ用の読み物レイアウトで表示中か
+let sheetDate = null; // Daily の日付ノードを開いているときの日付キー
 let addDue = "today"; // selected chip in the add sheet
 let pendingDelete = null; // { run } awaiting delete confirmation
 
@@ -106,6 +108,7 @@ const sheetItemMeta = $("sheet-item-meta");
 const sheetTaskProps = $("sheet-task-props");
 const sheetItemNote = $("sheet-item-note");
 const btnSheetDelete = $("btn-sheet-delete");
+const sheetActions = $("sheet-actions");
 const sheetTaskTitle = $("sheet-task-title");
 const sheetTaskDue = $("sheet-task-due");
 const sheetTaskNode = $("sheet-task-node");
@@ -153,6 +156,7 @@ const pickerNodeTree = $("picker-node-tree");
 
 const sheetDeleteEl = $("sheet-delete");
 const sheetDeleteTitle = $("sheet-delete-title");
+const sheetDeleteNote = $("sheet-delete-note");
 const btnConfirmDelete = $("btn-confirm-delete");
 const btnCancelDelete = $("btn-cancel-delete");
 
@@ -591,12 +595,7 @@ function renderDailyView() {
 
   const today = localDateString();
   for (const group of groups) {
-    const header = document.createElement("div");
-    header.className = "group-header date" + (group.date === today ? " today" : "");
-    header.innerHTML = '<span class="group-label"></span><span class="group-count"></span>';
-    header.querySelector(".group-label").textContent = dailyDateLabel(group.date);
-    header.querySelector(".group-count").textContent = String(group.items.length);
-    taskList.appendChild(header);
+    taskList.appendChild(buildDateHeader(group, group.date === today));
 
     for (const item of group.items) {
       taskList.appendChild(buildItemRow(item, { showTime: true, origin: "daily" }));
@@ -904,6 +903,45 @@ function buildTaskRow(task, { showParent }) {
   return wrap;
 }
 
+// Daily の日付見出し。日付も Workflowy 上のノードなので、項目行と同じ操作対象
+// として扱う: タップで詳細シート、左スワイプでその日ごと削除。右スワイプ（完了）
+// は日付に完了の概念がないため持たせない。
+function buildDateHeader(group, isToday) {
+  const wrap = document.createElement("div");
+  wrap.className = "date-header-wrap task-row-wrap";
+  wrap.dataset.date = group.date;
+
+  const underlay = document.createElement("div");
+  underlay.className = "task-row-underlay";
+  underlay.innerHTML = '<span class="underlay-complete"></span><span class="underlay-delete">この日ごと削除</span>';
+  wrap.appendChild(underlay);
+
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "date-header-row" + (isToday ? " today" : "");
+
+  const { date, weekday } = dailyDateParts(group.date);
+  row.innerHTML =
+    '<span class="date-header-date"></span>' +
+    '<span class="date-header-weekday"></span>' +
+    '<span class="date-header-rule"></span>' +
+    '<span class="date-header-count"></span>' +
+    '<span class="date-header-chevron" aria-hidden="true">›</span>';
+  row.querySelector(".date-header-date").textContent = date;
+  row.querySelector(".date-header-weekday").textContent = weekday;
+  row.querySelector(".date-header-count").textContent = String(group.items.length);
+
+  wrap.appendChild(row);
+
+  bindRowSwipe(wrap, row, {
+    deleteOnly: true,
+    onDelete: () =>
+      openDeleteConfirm(dailyNoteTitle(group.date), () => deleteDailyNote(group.date, wrap, row), DELETE_NOTE_DAY),
+    onTap: () => openDailyNoteSheet(group),
+  });
+  return wrap;
+}
+
 // Daily / 登録ノードビューの行（タスクもメモも同じ操作を持つ）。
 // showTime: Daily のみ時刻の左カラムを出す。origin: 'daily' | <place id>。
 function buildItemRow(item, { showTime, origin }) {
@@ -920,6 +958,7 @@ function buildItemRow(item, { showTime, origin }) {
   row.className = "task-row";
 
   if (showTime) {
+    row.classList.add("has-time");
     const time = document.createElement("div");
     time.className = "memo-time";
     time.textContent = itemTimeLabel(item.createdAt);
@@ -1092,6 +1131,22 @@ function removeItemFromOrigin(id, origin) {
   }
 }
 
+// 日付ノードごと削除する。日付キー（YYYY-MM-DD）はそのままノード識別子として
+// 使える。その日のブロックがまとめて消えるので、行だけ畳まず一覧を描き直す。
+async function deleteDailyNote(date, wrap, row) {
+  animateRemove(wrap);
+  try {
+    await apiRequest(`/nodes/${encodeURIComponent(date)}`, { method: "DELETE" });
+    dailyGroups = dailyGroups.filter((g) => g.date !== date);
+    saveDailyCache();
+    render();
+    showToast("削除しました");
+  } catch (e) {
+    restoreRemove(wrap, row);
+    showToast(e.message, true);
+  }
+}
+
 async function deleteItem(item, wrap, row, origin) {
   animateRemove(wrap);
   try {
@@ -1125,8 +1180,10 @@ function scheduleTask(task, dateStr, timeStr) {
 // complete toggle, left = delete confirmation, tap = detail sheet. Shared by
 // every row in every view (tasks and memos are the same Workflowy nodes).
 // Direction is locked in on the first move past the threshold; vertical pans
-// stay with the browser via touch-action.
+// stay with the browser via touch-action. handlers.deleteOnly drops the right
+// swipe for rows with no completed state (the Daily date headings).
 function bindRowSwipe(wrap, row, handlers) {
+  const deleteOnly = !!handlers.deleteOnly;
   let activePointerId = null;
   let startX = 0;
   let startY = 0;
@@ -1162,12 +1219,12 @@ function bindRowSwipe(wrap, row, handlers) {
     if (direction !== "horizontal") return;
 
     dragging = true;
-    dx = clampDx(curDx);
+    dx = clampDx(curDx, { deleteOnly });
     row.style.transform = `translateX(${dx}px)`;
     // 背面の色: 方向としきい値到達で濃さを変える（反対側のラベルは消す）
     wrap.classList.toggle("swipe-right", dx > 0);
     wrap.classList.toggle("swipe-left", dx < 0);
-    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx) !== null);
+    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx, { deleteOnly }) !== null);
   });
 
   const finish = (e, commit) => {
@@ -1181,7 +1238,7 @@ function bindRowSwipe(wrap, row, handlers) {
       setTimeout(() => {
         suppressClick = false;
       }, 0);
-      const action = commit ? resolveSwipeAction(dx) : null;
+      const action = commit ? resolveSwipeAction(dx, { deleteOnly }) : null;
       snapBack(row);
       if (action === "complete") {
         handlers.onToggleComplete(); // toggle: right swipe on a completed row uncompletes
@@ -1222,13 +1279,18 @@ function fillSheet() {
   const today = localDateString();
 
   sheetTaskTitle.textContent = normalizeTitle(entity.plainName) || "（無題）";
-  sheetTaskTitle.classList.toggle("memo", sheetIsMemo);
-  sheetItemMeta.classList.toggle("hidden", !sheetIsMemo);
-  sheetTaskProps.classList.toggle("hidden", sheetIsMemo);
+  sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
+  sheetItemMeta.classList.toggle("hidden", !sheetIsMemo && !sheetDate);
+  sheetTaskProps.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
   sheetItemNote.classList.toggle("hidden", !sheetIsMemo || !entity.note);
-  btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo);
+  btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
+  btnSheetComplete.classList.toggle("hidden", !!sheetDate);
+  sheetActions.classList.toggle("only-delete", !!sheetDate);
 
-  if (sheetIsMemo) {
+  if (sheetDate) {
+    // 日付ノードには完了の概念がないので「完了にする」は出さない
+    sheetItemMeta.textContent = "デイリーノート";
+  } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
     sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
     if (entity.note) sheetItemNote.textContent = stripHtml(entity.note);
@@ -1253,7 +1315,22 @@ function fillSheet() {
 function openSheetFor(entity, origin) {
   sheetTask = entity;
   sheetOrigin = origin;
+  sheetDate = null;
   sheetIsMemo = origin !== "tasks" && !entity.todo;
+  showSheet();
+}
+
+// 日付ノードの詳細シート。ノード ID の代わりに日付キーをそのまま使う
+// （Workflowy API が日付キーを識別子として受ける）。
+function openDailyNoteSheet(group) {
+  sheetTask = { id: group.date, plainName: dailyNoteTitle(group.date), note: null, completed: false };
+  sheetOrigin = "daily";
+  sheetDate = group.date;
+  sheetIsMemo = false;
+  showSheet();
+}
+
+function showSheet() {
   fillSheet();
   sheetDueEditor.classList.add("hidden");
   sheetNoteEditor.classList.add("hidden");
@@ -1356,6 +1433,7 @@ function closeTopLayer() {
   } else if (layer === "detail") {
     sheetTaskEl.classList.add("hidden");
     sheetTask = null;
+    sheetDate = null;
   } else if (layer === "compose") {
     sheetAddEl.classList.add("hidden");
   } else if (layer === "settings") {
@@ -1388,9 +1466,15 @@ function bindBackButton() {
 
 // ==================== Delete confirmation ====================
 
-function openDeleteConfirm(title, run) {
+const DELETE_NOTE_NODE = "Workflowy 側のノードも削除されます。元に戻せません。";
+const DELETE_NOTE_DAY = "その日のノートごと Workflowy 側から削除されます。元に戻せません。";
+
+// note: 日付ノードのように「何が一緒に消えるか」が行の見た目から読めない場合だけ
+// 文面を差し替える。
+function openDeleteConfirm(title, run, note) {
   pendingDelete = { run };
   sheetDeleteTitle.textContent = title;
+  sheetDeleteNote.textContent = note || DELETE_NOTE_NODE;
   sheetDeleteEl.classList.remove("hidden");
   armHistory();
 }
@@ -1845,6 +1929,17 @@ function bindEvents() {
     if (!sheetTask) return;
     const entity = sheetTask;
     const origin = sheetOrigin;
+    if (sheetDate) {
+      const date = sheetDate;
+      const dateWrap = taskList.querySelector(`[data-date="${CSS.escape(date)}"]`);
+      sheetTaskEl.classList.add("hidden");
+      openDeleteConfirm(
+        dailyNoteTitle(date),
+        () => deleteDailyNote(date, dateWrap, dateWrap ? dateWrap.querySelector(".date-header-row") : null),
+        DELETE_NOTE_DAY
+      );
+      return;
+    }
     const wrap = taskList.querySelector(`[data-task-id="${CSS.escape(entity.id)}"]`);
     const row = wrap ? wrap.querySelector(".task-row") : null;
     sheetTaskEl.classList.add("hidden");

@@ -561,22 +561,94 @@ button {
 
 /* ---- Daily / registered-node views ---- */
 
-.group-header.date .group-label {
-  font: 600 14px/1.35 var(--font-mono);
+/* Daily の日付見出しは「日付 + 曜日バッジ + 罫線 + 件数」の帯。罫線を右へ流して
+   件数で受けることで、1 日の区切りが横方向に読める。日付も Workflowy 上の
+   ノードなので、項目行と同じくタップ/左スワイプの対象（.date-header-row）。 */
+.date-header-wrap {
+  position: relative;
+  overflow: hidden;
+  margin: 18px 14px 0;
+}
+
+.date-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  /* モバイルのタップ・スワイプ両対応のため 44px 以上を確保する */
+  min-height: 47px;
+  padding: 0 12px;
+  border: 0;
+  background: var(--base);
+  color: inherit;
+  text-align: left;
+  touch-action: pan-y;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.date-header-row:hover {
+  background: var(--row-hover);
+}
+
+.date-header-date {
+  flex: none;
+  font: 600 19px/1 var(--font-mono);
   color: var(--subtext1);
 }
 
-.group-header.date.today .group-label {
+.group-header.date.today .date-header-date,
+.date-header-row.today .date-header-date {
   color: var(--accent-soft);
 }
 
+/* 曜日は独立したバッジ。今日だけ地と文字を反転させて、ひと目で今日が分かる */
+.date-header-weekday {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(230, 232, 236, 0.1);
+  color: var(--subtext0);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.date-header-row.today .date-header-weekday {
+  background: var(--accent);
+  color: var(--base);
+}
+
+.date-header-rule {
+  flex: 1;
+  height: 1px;
+  min-width: 12px;
+  background: var(--hairline);
+}
+
+.date-header-count {
+  flex: none;
+  font: 400 12px/1 var(--font-mono);
+  color: var(--overlay0);
+}
+
+/* 押せることを示すシェブロン。hover の背景変化と対で「行」だと伝える */
+.date-header-chevron {
+  flex: none;
+  color: var(--overlay0);
+  font-size: 15px;
+  line-height: 1;
+}
+
 /* メモ行: チェックボックスを持たず、時刻の左カラム（Daily のみ）と本文 */
+/* 時刻は右揃え・固定幅で桁を縦に揃える。本文との間は余白だけで、縦罫は入れない */
 .memo-time {
   flex: none;
-  width: 38px;
-  padding-top: 3px;
-  font: 500 12.5px/1 var(--font-mono);
+  width: 40px;
+  padding-top: 4px;
+  font: 600 12px/1 var(--font-mono);
   color: var(--subtext0);
+  text-align: right;
 }
 
 .memo-name {
@@ -594,6 +666,10 @@ button {
   color: var(--subtext0);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.task-row.has-time {
+  gap: 13px;
 }
 
 .task-row.done .memo-name,
@@ -849,6 +925,13 @@ button.sheet-prop-value {
   margin-top: 12px;
   font: 400 12.5px/1.5 var(--font-sans);
   color: var(--subtext0);
+}
+
+/* 日付ノードのシートは削除しか操作を持たないので、アイコン 1 個が左端に
+   取り残されないよう横幅いっぱいに伸ばす */
+.sheet-actions.only-delete .sheet-action-delete {
+  flex: 1;
+  width: auto;
 }
 
 /* 詳細シートの削除アイコンボタン（左端・固定幅）。完了トグルは client.js が

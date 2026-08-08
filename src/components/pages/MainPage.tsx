@@ -88,7 +88,7 @@ export const MainPage: FC = () => (
           <span>Workflowy で開く</span>
           <span class="sheet-link-arrow">↗</span>
         </a>
-        <div class="sheet-actions">
+        <div id="sheet-actions" class="sheet-actions">
           <button id="btn-sheet-delete" class="sheet-action sheet-action-delete" title="削除">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18"></path>
@@ -109,7 +109,7 @@ export const MainPage: FC = () => (
         <div class="sheet-grabber"></div>
         <div class="sheet-title">削除しますか</div>
         <div id="sheet-delete-title" class="sheet-delete-target"></div>
-        <p class="sheet-delete-note">Workflowy 側のノードも削除されます。元に戻せません。</p>
+        <p id="sheet-delete-note" class="sheet-delete-note">Workflowy 側のノードも削除されます。元に戻せません。</p>
         <div class="sheet-actions">
           <button id="btn-cancel-delete" class="sheet-action">キャンセル</button>
           <button id="btn-confirm-delete" class="sheet-action danger">削除</button>

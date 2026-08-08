@@ -74,7 +74,10 @@ export function donutDash(done: number, total: number): string;
 export function workflowyUrl(nodeId: string): string;
 
 export function swipeDirection(dx: number, dy: number, threshold?: number): "horizontal" | "vertical" | null;
-export function resolveSwipeAction(dx: number, threshold?: number): "complete" | "delete" | null;
-export function clampDx(dx: number, max?: number): number;
+export function resolveSwipeAction(
+  dx: number,
+  opts?: { threshold?: number; deleteOnly?: boolean }
+): "complete" | "delete" | null;
+export function clampDx(dx: number, opts?: { max?: number; deleteOnly?: boolean }): number;
 
 export function dueShortcut(option: string, todayStr?: string): { date: string } | null;

@@ -465,6 +465,183 @@ button {
   border-color: rgba(230, 232, 236, 0.7);
 }
 
+/* ---- View bar ---- */
+
+.viewbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 9px 0 calc(16px + env(safe-area-inset-bottom));
+  background: var(--input-bg);
+  border-top: 1px solid var(--hairline);
+  /* バー上の水平ドラッグはビュー切り替えとして自前で扱う */
+  touch-action: none;
+}
+
+.viewbar-track {
+  display: flex;
+  gap: 4px;
+  padding: 0 14px 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.viewbar-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* 行末スペーサー: 最後のピルが FAB の下に潜らないように */
+.viewbar-track::after {
+  content: "";
+  flex: none;
+  width: 62px;
+}
+
+.view-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--subtext0);
+  font: 500 14px/1 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.view-pill:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.view-pill.active {
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.view-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(230, 232, 236, 0.2);
+}
+
+.view-pill.active .view-dot {
+  background: var(--accent);
+}
+
+/* ビュー切り替えは横スライドではなくクロスフェード（バー上のスワイプと
+   本文のスワイプを別物に見せる） */
+.task-list.view-fade {
+  animation: view-fade 0.2s ease;
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Daily / registered-node views ---- */
+
+.group-header.date .group-label {
+  font: 600 14px/1.35 var(--font-mono);
+  color: var(--subtext1);
+}
+
+.group-header.date.today .group-label {
+  color: var(--accent-soft);
+}
+
+/* メモ行: チェックボックスを持たず、時刻の左カラム（Daily のみ）と本文 */
+.memo-time {
+  flex: none;
+  width: 38px;
+  padding-top: 3px;
+  font: 500 12.5px/1 var(--font-mono);
+  color: var(--subtext0);
+}
+
+.memo-name {
+  font: 400 16px/1.55 var(--font-sans);
+  color: var(--text);
+  text-wrap: pretty;
+  word-break: break-word;
+}
+
+.memo-note {
+  margin-top: 6px;
+  font: 400 14px/1.65 var(--font-sans);
+  color: var(--subtext1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-row.done .memo-name,
+.task-row.done .memo-note {
+  color: var(--overlay0);
+  text-decoration: line-through;
+}
+
+/* タスクであることは本文の下のタグだけで示す（登録ノード/Daily ビュー） */
+.item-tag-row {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-tag {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  font: 500 10.5px/1 var(--font-sans);
+  letter-spacing: 0.06em;
+  background: rgba(230, 232, 236, 0.14);
+  color: var(--accent-soft);
+  cursor: pointer;
+}
+
+.item-tag.done {
+  background: rgba(230, 232, 236, 0.1);
+  color: var(--overlay0);
+}
+
+.item-tag-due {
+  font: 500 12.5px/1 var(--font-mono);
+  color: var(--subtext1);
+}
+
+.item-tag-due.overdue {
+  color: var(--maroon);
+}
+
+/* 過去のデイリーノートを読み込む（自動読み込みのフォールバック兼ローディング） */
+.daily-more {
+  display: block;
+  margin: 18px auto 0;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--subtext0);
+  font: 500 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.daily-more:hover {
+  color: var(--accent-soft);
+}
+
 /* ---- Bottom sheets ---- */
 
 .sheet {
@@ -517,6 +694,30 @@ button {
   font: 400 19px/1.45 var(--font-sans);
   color: var(--text);
   text-wrap: pretty;
+}
+
+/* メモの詳細シート: 読むための画面（時刻 · 場所 / 大きめタイトル / note 面） */
+.sheet-item-meta {
+  margin-bottom: 8px;
+  font: 400 12.5px/1.4 var(--font-sans);
+  color: var(--subtext0);
+}
+
+.sheet-title.memo {
+  font: 400 21px/1.5 var(--font-sans);
+}
+
+.sheet-note-face {
+  margin-top: 14px;
+  padding: 15px 16px;
+  border-radius: 12px;
+  background: var(--base);
+  font: 400 16px/1.85 var(--font-sans);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .sheet-props {
@@ -625,9 +826,30 @@ button.sheet-prop-value {
 
 .sheet-delete-target {
   margin-top: 12px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: var(--base);
   font: 400 15px/1.5 var(--font-sans);
   color: var(--subtext1);
   text-wrap: pretty;
+  word-break: break-word;
+}
+
+.sheet-delete-note {
+  margin-top: 12px;
+  font: 400 12.5px/1.5 var(--font-sans);
+  color: var(--subtext0);
+}
+
+/* 詳細シートの削除アイコンボタン（左端・固定幅）。完了トグルは client.js が
+   primary クラスを付け外しする（未完了時は塗り、完了時は枠線） */
+.sheet-action-delete {
+  flex: none;
+  width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--maroon);
 }
 
 .sheet-action:disabled {

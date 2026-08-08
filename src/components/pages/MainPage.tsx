@@ -35,15 +35,22 @@ export const MainPage: FC = () => (
 
     <main id="task-list" class="task-list"></main>
 
-    <button id="btn-add-task" class="fab" title="新しいタスク">+</button>
+    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する */}
+    <nav id="viewbar" class="viewbar" aria-label="ビュー切り替え">
+      <div id="viewbar-track" class="viewbar-track" role="tablist"></div>
+    </nav>
+
+    <button id="btn-add-task" class="fab" title="新しく書き留める">+</button>
 
     {/* 詳細シート（行タップ） */}
     <div id="sheet-task" class="sheet hidden">
       <div class="sheet-backdrop" data-close-sheet="sheet-task"></div>
       <div class="sheet-panel">
         <div class="sheet-grabber"></div>
+        {/* メモのみ: 時刻 · 場所 */}
+        <div id="sheet-item-meta" class="sheet-item-meta hidden"></div>
         <div id="sheet-task-title" class="sheet-title"></div>
-        <div class="sheet-props">
+        <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
           <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
           <span class="sheet-prop-label">ノード</span>
@@ -75,14 +82,22 @@ export const MainPage: FC = () => (
             <button id="btn-sheet-save-note" class="chip-submit">保存</button>
           </div>
         </div>
+        {/* メモのみ: note を読むための面 */}
+        <div id="sheet-item-note" class="sheet-note-face hidden"></div>
         <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
           <span>Workflowy で開く</span>
           <span class="sheet-link-arrow">↗</span>
         </a>
         <div class="sheet-actions">
+          <button id="btn-sheet-delete" class="sheet-action sheet-action-delete" title="削除">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"></path>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
-          <button id="btn-snooze-week" class="sheet-action">来週へ</button>
-          <button id="btn-sheet-complete" class="sheet-action primary">完了</button>
+          <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
         </div>
       </div>
     </div>
@@ -92,8 +107,9 @@ export const MainPage: FC = () => (
       <div class="sheet-backdrop" data-close-sheet="sheet-delete"></div>
       <div class="sheet-panel">
         <div class="sheet-grabber"></div>
-        <div class="sheet-title">このタスクを削除しますか？</div>
+        <div class="sheet-title">削除しますか</div>
         <div id="sheet-delete-title" class="sheet-delete-target"></div>
+        <p class="sheet-delete-note">Workflowy 側のノードも削除されます。元に戻せません。</p>
         <div class="sheet-actions">
           <button id="btn-cancel-delete" class="sheet-action">キャンセル</button>
           <button id="btn-confirm-delete" class="sheet-action danger">削除</button>

@@ -1,22 +1,24 @@
 :root {
-  /* Catppuccin Macchiato (design_handoff_workflowy_tasks) */
-  --base: #24273a;          /* 地 */
-  --sheet: #363a4f;         /* シート面 */
-  --input-bg: #1e2030;      /* 入力面 */
-  --text: #cad3f5;          /* 本文・タイトル */
-  --subtext1: #a5adcb;      /* 二次テキスト・日付 */
-  --subtext0: #8087a2;      /* 補助テキスト */
-  --overlay0: #6e738d;      /* 完了テキスト・記号 */
-  --accent: #8aadf4;        /* アクセント（青） */
-  --accent-soft: #b7bdf8;   /* アクセント文字（薄） */
-  --maroon: #ee99a0;        /* 期限切れ */
+  /* Charcoal (design_handoff_taskflowy_views; supersedes Macchiato) */
+  --base: #22242a;          /* 地（行の背景も同じ） */
+  --sheet: #2c2f36;         /* シート面 */
+  --input-bg: #1b1d22;      /* 入力面・ビューバー */
+  --text: #e6e8ec;          /* 本文・タイトル */
+  --subtext1: #c3c8d0;      /* 二次テキスト・日付 */
+  --subtext0: #9aa0aa;      /* 補助テキスト */
+  --overlay0: #767c86;      /* 完了テキスト・記号 */
+  --accent: #e6e8ec;        /* アクセント（＝白の塗り。文字は地色を載せる） */
+  --accent-soft: #f2f4f7;   /* 淡い面の上のアクセント文字 */
+  --accent-dim: rgba(230, 232, 236, 0.13); /* 選択タブ・選択ビュー・TODOタグ */
+  --maroon: #e39098;        /* 期限切れ（唯一の有彩色） */
 
   --surface: rgba(255, 255, 255, 0.04);      /* カード地 */
-  --surface-tab: rgba(202, 211, 245, 0.06);  /* タブ地 */
-  --line: rgba(255, 255, 255, 0.14);         /* 罫線 */
-  --check-line: rgba(202, 211, 245, 0.26);   /* 未完了チェック枠 */
-  --overlay-bg: rgba(24, 25, 38, 0.72);      /* シート背景オーバーレイ */
-  --row-hover: #2a2e44;
+  --surface-tab: rgba(255, 255, 255, 0.06);  /* タブ地 */
+  --line: rgba(255, 255, 255, 0.14);         /* 罫線（枠線・区切り） */
+  --hairline: rgba(255, 255, 255, 0.08);     /* 行の下罫線 */
+  --check-line: rgba(230, 232, 236, 0.28);   /* 未完了チェック枠 */
+  --overlay-bg: rgba(12, 13, 16, 0.74);      /* シート背景オーバーレイ */
+  --row-hover: #2a2d34;
 
   --font-sans: Barlow, "Hiragino Sans", system-ui, sans-serif;
   --font-cond: "Barlow Condensed", "Hiragino Sans", system-ui, sans-serif;
@@ -117,7 +119,7 @@ button {
   height: 40px;
   border: 0;
   border-radius: 50%;
-  background: rgba(202, 211, 245, 0.1);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--accent-soft);
   cursor: pointer;
   display: flex;
@@ -127,7 +129,7 @@ button {
 }
 
 .btn-gear:hover {
-  background: rgba(138, 173, 244, 0.22);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .btn-close {
@@ -167,7 +169,7 @@ button {
 }
 
 .tab.active {
-  background: rgba(138, 173, 244, 0.18);
+  background: var(--accent-dim);
   color: var(--accent-soft);
 }
 
@@ -177,7 +179,8 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 130px;
+  /* FAB とビューバーの合計高さぶんの逃げ */
+  padding: 6px 0 150px;
 }
 
 .group-header {
@@ -201,13 +204,16 @@ button {
   color: var(--overlay0);
 }
 
+/* 行は面も影も持たず、下罫線（hairline）だけで切る。行間 0。 */
 .task-row-wrap {
   position: relative;
   overflow: hidden;
   margin: 0 14px;
-  border-radius: 14px;
+  border-bottom: 1px solid var(--hairline);
 }
 
+/* スワイプ中の背面: 行の背面いっぱいに色を敷き、しきい値の前後で濃さを変える。
+   方向クラス（swipe-right/left）と past-threshold は client.js が付ける。 */
 .task-row-underlay {
   position: absolute;
   inset: 0;
@@ -218,12 +224,41 @@ button {
   font: 500 13px/1 var(--font-sans);
 }
 
-.task-row-underlay .underlay-complete {
-  color: var(--accent);
+.task-row-underlay .underlay-complete,
+.task-row-underlay .underlay-delete {
+  color: transparent;
 }
 
-.task-row-underlay .underlay-delete {
+.task-row-wrap.swipe-right .task-row-underlay {
+  background: rgba(230, 232, 236, 0.2);
+}
+
+.task-row-wrap.swipe-right .underlay-complete {
+  color: var(--accent-soft);
+}
+
+.task-row-wrap.swipe-right.past-threshold .task-row-underlay {
+  background: var(--accent);
+}
+
+.task-row-wrap.swipe-right.past-threshold .underlay-complete {
+  color: var(--base);
+}
+
+.task-row-wrap.swipe-left .task-row-underlay {
+  background: rgba(227, 144, 152, 0.22);
+}
+
+.task-row-wrap.swipe-left .underlay-delete {
   color: var(--maroon);
+}
+
+.task-row-wrap.swipe-left.past-threshold .task-row-underlay {
+  background: var(--maroon);
+}
+
+.task-row-wrap.swipe-left.past-threshold .underlay-delete {
+  color: var(--base);
 }
 
 .task-row {
@@ -232,7 +267,6 @@ button {
   gap: 15px;
   align-items: flex-start;
   padding: 13px 12px;
-  border-radius: 14px;
   background: var(--base);
   touch-action: pan-y;
   cursor: pointer;
@@ -335,7 +369,7 @@ button {
   padding: 7px 14px;
   border: 0;
   border-radius: 999px;
-  background: rgba(202, 211, 245, 0.1);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--subtext0);
   font: 500 12.5px/1 var(--font-sans);
   cursor: pointer;
@@ -343,12 +377,12 @@ button {
 }
 
 .node-filter:hover {
-  background: rgba(202, 211, 245, 0.18);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .node-filter.active {
-  background: rgba(138, 173, 244, 0.22);
-  color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-soft);
 }
 
 .node-list {
@@ -408,20 +442,27 @@ button {
 
 /* ---- FAB ---- */
 
+/* FAB は塗らない: 地色の面に枠線、ビューバー(z-index 20)より上 */
 .fab {
   position: absolute;
   right: 24px;
-  bottom: calc(36px + env(safe-area-inset-bottom));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   width: 58px;
   height: 58px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--base);
+  border: 1px solid rgba(230, 232, 236, 0.42);
+  border-radius: 16px;
+  background: var(--base);
+  color: var(--accent);
   font: 400 30px/1 var(--font-sans);
   cursor: pointer;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
-  z-index: 40;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  z-index: 25;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.fab:hover {
+  background: var(--row-hover);
+  border-color: rgba(230, 232, 236, 0.7);
 }
 
 /* ---- Bottom sheets ---- */
@@ -507,7 +548,7 @@ button.sheet-prop-value {
 }
 
 .sheet-prop-edit {
-  text-decoration: underline dotted rgba(202, 211, 245, 0.35);
+  text-decoration: underline dotted rgba(230, 232, 236, 0.35);
   text-underline-offset: 3px;
 }
 
@@ -536,7 +577,7 @@ button.sheet-prop-value {
   margin-top: 18px;
   padding: 13px 15px;
   border-radius: 12px;
-  background: rgba(138, 173, 244, 0.12);
+  background: rgba(230, 232, 236, 0.1);
   color: var(--accent-soft);
   font: 500 14px/1 var(--font-sans);
   text-decoration: none;
@@ -544,7 +585,7 @@ button.sheet-prop-value {
 }
 
 .sheet-link:hover {
-  background: rgba(138, 173, 244, 0.2);
+  background: rgba(230, 232, 236, 0.18);
 }
 
 .sheet-link-arrow {
@@ -695,8 +736,8 @@ button.sheet-prop-value {
 }
 
 .chip.active {
-  background: rgba(138, 173, 244, 0.18);
-  border-color: rgba(138, 173, 244, 0.7);
+  background: var(--accent-dim);
+  border-color: rgba(230, 232, 236, 0.5);
   color: var(--accent-soft);
 }
 
@@ -718,7 +759,7 @@ button.sheet-prop-value {
 
 .pill {
   padding: 8px 14px;
-  border: 1px solid rgba(138, 173, 244, 0.55);
+  border: 1px solid rgba(230, 232, 236, 0.5);
   border-radius: 999px;
   background: transparent;
   color: var(--accent-soft);
@@ -917,7 +958,7 @@ button.sheet-prop-value {
 }
 
 .destination-item.active {
-  border-color: rgba(138, 173, 244, 0.55);
+  border-color: rgba(230, 232, 236, 0.5);
 }
 
 .destination-item-name {
@@ -1035,7 +1076,7 @@ button.sheet-prop-value {
 }
 
 .node-tree-item.selected {
-  background: rgba(138, 173, 244, 0.18);
+  background: var(--accent-dim);
   color: var(--accent-soft);
 }
 
@@ -1065,7 +1106,7 @@ button.sheet-prop-value {
 
 .node-tree-drill:hover {
   color: var(--accent);
-  background: rgba(138, 173, 244, 0.15);
+  background: rgba(230, 232, 236, 0.15);
 }
 
 /* ---- Toast ---- */

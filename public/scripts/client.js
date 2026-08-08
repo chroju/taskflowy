@@ -340,8 +340,8 @@ function renderNodeList() {
   for (const node of nodes) {
     const row = document.createElement("button");
     row.className = "node-row";
-    const ring = node.hasOverdue ? "#ee99a0" : "#8aadf4";
-    const track = node.hasOverdue ? "rgba(238,153,160,.28)" : "rgba(202,211,245,.16)";
+    const ring = node.hasOverdue ? "#e39098" : "#e6e8ec";
+    const track = node.hasOverdue ? "rgba(227,144,152,.28)" : "rgba(230,232,236,.16)";
     row.innerHTML = `
       <svg class="node-donut" width="20" height="20" viewBox="0 0 20 20">
         <circle cx="10" cy="10" r="8" fill="none" stroke="${track}" stroke-width="3"></circle>
@@ -525,12 +525,17 @@ function bindTaskRowSwipe(wrap, row, task) {
     dragging = true;
     dx = clampDx(curDx);
     row.style.transform = `translateX(${dx}px)`;
+    // 背面の色: 方向としきい値到達で濃さを変える（反対側のラベルは消す）
+    wrap.classList.toggle("swipe-right", dx > 0);
+    wrap.classList.toggle("swipe-left", dx < 0);
+    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx) !== null);
   });
 
   const finish = (e, commit) => {
     if (e.pointerId !== activePointerId) return;
     activePointerId = null;
     row.classList.remove("dragging");
+    wrap.classList.remove("swipe-right", "swipe-left", "past-threshold");
     if (dragging) {
       // The click event fires right after pointerup; swallow it once.
       suppressClick = true;

@@ -3,8 +3,8 @@
   "short_name": "Taskflowy",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#24273a",
-  "theme_color": "#24273a",
+  "background_color": "#22242a",
+  "theme_color": "#22242a",
   "icons": [
     {
       "src": "/icon-192.png",

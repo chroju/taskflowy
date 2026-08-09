@@ -514,6 +514,13 @@ button {
   scrollbar-width: none;
 }
 
+/* 編集モード中はピルの横ドラッグ並べ替えを自前で扱うため、トラック自身の
+   横スクロールジェスチャーと競合しないよう無効化する */
+.viewbar-track.reordering,
+.viewbar.editing .viewbar-track {
+  touch-action: none;
+}
+
 .viewbar-track::-webkit-scrollbar {
   display: none;
 }

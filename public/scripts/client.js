@@ -477,6 +477,7 @@ function bindViewPillReorder(pill, closeEl) {
 
   pill.addEventListener("pointerdown", (e) => {
     if (closeEl.contains(e.target)) return;
+    e.preventDefault();
     const startX = e.clientX;
     let dragging = false;
 

@@ -41,6 +41,7 @@ export function dailyCounts(groups: DailyGroupLike[]): { items: number; days: nu
 export function itemTimeLabel(createdAt: number): string;
 
 export interface UiLayerFlags {
+  shareOpen: boolean;
   deleteOpen: boolean;
   pickerOpen: boolean;
   detailOpen: boolean;
@@ -51,7 +52,7 @@ export interface UiLayerFlags {
 
 export function topUiLayer(
   flags: UiLayerFlags
-): "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
+): "share" | "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
 
 export type ShowCompletedState = Record<string, boolean> | boolean | undefined | null;
 export function showCompletedFor(state: ShowCompletedState, scope: string): boolean;
@@ -82,3 +83,5 @@ export function destSendTarget(
   places: Place[],
   todayStr?: string
 ): { targetType: "calendar"; day: string } | { targetType: "node"; parentId: string } | null;
+
+export function parseSharePayload(search: string): string | null;

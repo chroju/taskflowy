@@ -30,6 +30,7 @@ import {
   destLabel,
   destSendTarget,
   layoutActionLabel,
+  parseSharePayload,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -183,6 +184,7 @@ describe("Daily view helpers", () => {
 describe("topUiLayer", () => {
   const none = {
     deleteOpen: false,
+    shareOpen: false,
     pickerOpen: false,
     detailOpen: false,
     composeOpen: false,
@@ -196,6 +198,14 @@ describe("topUiLayer", () => {
 
   it("closes the delete confirmation before anything else", () => {
     expect(topUiLayer({ ...none, deleteOpen: true, detailOpen: true, drilldown: true })).toBe("delete");
+  });
+
+  it("closes the share-format sheet before the delete confirmation", () => {
+    expect(topUiLayer({ ...none, shareOpen: true, deleteOpen: true })).toBe("share");
+  });
+
+  it("closes the share-format sheet before the detail sheet", () => {
+    expect(topUiLayer({ ...none, shareOpen: true, detailOpen: true })).toBe("share");
   });
 
   it("closes the destination picker before the compose sheet", () => {
@@ -371,5 +381,33 @@ describe("layoutActionLabel", () => {
 
   it("offers the todo side for a note", () => {
     expect(layoutActionLabel(false)).toBe("タスクにする");
+  });
+});
+
+describe("parseSharePayload", () => {
+  it("combines title and text with a blank line", () => {
+    expect(parseSharePayload("?title=Article&text=Worth+reading")).toBe("Article\n\nWorth reading");
+  });
+
+  it("appends the shared url on its own line", () => {
+    expect(parseSharePayload("?title=Article&url=https%3A%2F%2Fexample.com")).toBe(
+      "Article\n\nhttps://example.com"
+    );
+  });
+
+  it("combines title, text, and url", () => {
+    expect(
+      parseSharePayload("?title=Article&text=Worth+reading&url=https%3A%2F%2Fexample.com")
+    ).toBe("Article\n\nWorth reading\n\nhttps://example.com");
+  });
+
+  it("falls back to whichever field is present", () => {
+    expect(parseSharePayload("?text=just+text")).toBe("just text");
+    expect(parseSharePayload("?url=https%3A%2F%2Fexample.com")).toBe("https://example.com");
+  });
+
+  it("returns null when none of title/text/url are present", () => {
+    expect(parseSharePayload("")).toBeNull();
+    expect(parseSharePayload("?unrelated=1")).toBeNull();
   });
 });

@@ -52,6 +52,7 @@ import {
   movePlace,
   reorderPlaces,
   parseSharePayload,
+  normalizeDraftNote,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -1823,6 +1824,7 @@ function resetComposeInputs() {
 // draftNote: 他アプリからの共有（Web Share Target）で事前入力するノート本文。
 // 共有内容はタイトル/URLが分かれておらず自由記述に近いため、常にノートモードで開く。
 function openAddSheet(draftNote) {
+  draftNote = normalizeDraftNote(draftNote); // FAB のクリックイベント等、文字列以外は事前入力なし扱い
   composeMode = draftNote ? "note" : initialComposeMode(settings.composeMode); // 前回使ったモードで開く
   composeContinuous = false; // 連続追加は毎回 OFF から
   // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
@@ -2118,7 +2120,7 @@ function bindEvents() {
   btnSettings.addEventListener("click", openSettings);
   btnCloseSettings.addEventListener("click", closeViaBack);
 
-  btnAddTask.addEventListener("click", openAddSheet);
+  btnAddTask.addEventListener("click", () => openAddSheet());
 
   document.querySelectorAll("[data-close-sheet]").forEach((el) => {
     el.addEventListener("click", closeViaBack);

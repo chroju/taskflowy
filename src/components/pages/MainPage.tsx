@@ -35,10 +35,13 @@ export const MainPage: FC = () => (
 
     <main id="task-list" class="task-list"></main>
 
-    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する */}
+    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する。
+        編集ボタンはビューのピルと同じトラック内の末尾要素で、ピルと一緒に
+        横スクロールする（別レイヤーで固定表示すると重なって見えるため） */}
     <nav id="viewbar" class="viewbar" aria-label="ビュー切り替え">
-      <div id="viewbar-track" class="viewbar-track" role="tablist"></div>
-      <button id="btn-viewbar-edit" class="viewbar-edit" title="ビューを編集">編集</button>
+      <div id="viewbar-track" class="viewbar-track" role="tablist">
+        <button id="btn-viewbar-edit" class="viewbar-edit" title="ビューを編集"></button>
+      </div>
     </nav>
 
     <button id="btn-add-task" class="fab" title="新しく書き留める">+</button>
@@ -121,9 +124,26 @@ export const MainPage: FC = () => (
       <div class="sheet-backdrop" data-close-sheet="sheet-places"></div>
       <div class="sheet-panel">
         <div class="sheet-grabber"></div>
-        <div class="sheet-title">ビューを編集</div>
+        <div class="card-row space-between">
+          <div class="sheet-title">ビューを編集</div>
+          <span id="place-count" class="place-count"></span>
+        </div>
         <p class="card-desc">並べ替え・表示のON/OFF・削除ができます。組み込みのビューは削除できません。</p>
         <div id="places-sheet-list" class="place-list"></div>
+        <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
+
+        <div id="panel-add-destination" class="dest-panel hidden">
+          <div id="node-tree" class="node-tree">
+            <p class="tree-empty">読み込み中...</p>
+          </div>
+          <div class="input-group">
+            <input id="dest-name-input" type="text" class="settings-input" placeholder="表示名" />
+          </div>
+          <div class="card-row">
+            <button id="btn-save-destination" class="btn-fill">保存</button>
+            <button id="btn-cancel-destination" class="btn-outline">キャンセル</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -289,34 +309,6 @@ export const MainPage: FC = () => (
           </div>
         </section>
 
-        <section class="card">
-          <div class="card-row space-between">
-            <div class="card-title">場所</div>
-            <span id="place-count" class="place-count"></span>
-          </div>
-          <p class="card-desc">
-            書き込み先とビューを管理します。並べ替え・表示切り替え・削除はビューバーの
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px">
-              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-              <path d="m15 5 4 4"></path>
-            </svg>
-            から。
-          </p>
-          <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
-
-          <div id="panel-add-destination" class="dest-panel hidden">
-            <div id="node-tree" class="node-tree">
-              <p class="tree-empty">読み込み中...</p>
-            </div>
-            <div class="input-group">
-              <input id="dest-name-input" type="text" class="settings-input" placeholder="表示名" />
-            </div>
-            <div class="card-row">
-              <button id="btn-save-destination" class="btn-fill">保存</button>
-              <button id="btn-cancel-destination" class="btn-outline">キャンセル</button>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   </div>

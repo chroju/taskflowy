@@ -31,6 +31,7 @@ import {
   destSendTarget,
   layoutActionLabel,
   parseSharePayload,
+  normalizeDraftNote,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -433,5 +434,23 @@ describe("parseSharePayload", () => {
   it("returns null when none of title/text/url are present", () => {
     expect(parseSharePayload("")).toBeNull();
     expect(parseSharePayload("?unrelated=1")).toBeNull();
+  });
+});
+
+describe("normalizeDraftNote", () => {
+  it("passes a non-empty string through", () => {
+    expect(normalizeDraftNote("Article\n\nhttps://example.com")).toBe(
+      "Article\n\nhttps://example.com"
+    );
+  });
+
+  it("returns null for an empty string", () => {
+    expect(normalizeDraftNote("")).toBeNull();
+  });
+
+  it("returns null for non-string values such as DOM events", () => {
+    expect(normalizeDraftNote({ type: "click" })).toBeNull();
+    expect(normalizeDraftNote(undefined)).toBeNull();
+    expect(normalizeDraftNote(null)).toBeNull();
   });
 });

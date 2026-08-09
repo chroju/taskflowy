@@ -353,3 +353,10 @@ export function parseSharePayload(search) {
   const lines = [title, text, url].filter(Boolean);
   return lines.length ? lines.join("\n\n") : null;
 }
+
+// Guards openAddSheet's draftNote argument: anything that isn't a non-empty
+// string (e.g. a PointerEvent when the function is wired directly as an
+// event listener) means "no prefill" rather than a stringified object.
+export function normalizeDraftNote(value) {
+  return typeof value === "string" && value ? value : null;
+}

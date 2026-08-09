@@ -87,3 +87,5 @@ export function destSendTarget(
 ): { targetType: "calendar"; day: string } | { targetType: "node"; parentId: string } | null;
 
 export function parseSharePayload(search: string): string | null;
+
+export function normalizeDraftNote(value: unknown): string | null;

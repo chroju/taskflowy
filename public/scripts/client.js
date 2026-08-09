@@ -49,6 +49,7 @@ import {
   splitNoteDraft,
   layoutActionLabel,
   toggleInView,
+  editBadgeAction,
   movePlace,
   reorderPlaces,
   parseSharePayload,
@@ -110,6 +111,7 @@ const taskList = $("task-list");
 const btnAddTask = $("btn-add-task");
 const viewbar = $("viewbar");
 const viewbarTrack = $("viewbar-track");
+const btnViewbarEdit = $("btn-viewbar-edit");
 
 const sheetTaskEl = $("sheet-task");
 const sheetItemMeta = $("sheet-item-meta");
@@ -428,9 +430,15 @@ function renderTasksView() {
 // ==================== View bar ====================
 
 let barSuppressClick = false;
+let viewbarEditing = false;
+
+const ICON_BADGE_CLOSE = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
 
 function renderViewBar() {
   viewbarTrack.innerHTML = "";
+  viewbar.classList.toggle("editing", viewbarEditing);
+  btnViewbarEdit.textContent = viewbarEditing ? "完了" : "編集";
+  btnViewbarEdit.classList.toggle("active", viewbarEditing);
   for (const place of visiblePlaces(settings.places)) {
     const pill = document.createElement("button");
     pill.className = "view-pill" + (place.id === view ? " active" : "");
@@ -441,10 +449,41 @@ function renderViewBar() {
     pill.querySelector(".view-pill-name").textContent = place.name;
     pill.addEventListener("click", () => {
       if (barSuppressClick) return;
+      if (viewbarEditing) return;
       switchView(place.id);
     });
+    if (viewbarEditing) {
+      const badge = document.createElement("span");
+      badge.className = "view-pill-badge";
+      badge.innerHTML = ICON_BADGE_CLOSE;
+      badge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        runViewbarEditBadge(place);
+      });
+      pill.appendChild(badge);
+    }
     viewbarTrack.appendChild(pill);
   }
+}
+
+function setViewbarEditing(editing) {
+  if (viewbarEditing === editing) return;
+  viewbarEditing = editing;
+  renderViewBar();
+}
+
+// バッジタップ: 登録ノードは削除確認シートを挟んで削除、組み込みは即座に非表示
+// （最後の表示中ビューは toggleInView がガードする）。
+function runViewbarEditBadge(place) {
+  if (editBadgeAction(place) === "delete") {
+    openDeleteConfirm(place.name, () => deletePlace(place.id), DELETE_NOTE_PLACE);
+    return;
+  }
+  togglePlaceView(place.id);
+}
+
+function bindViewbarEdit() {
+  btnViewbarEdit.addEventListener("click", () => setViewbarEditing(!viewbarEditing));
 }
 
 function switchView(next) {
@@ -485,7 +524,7 @@ function bindViewBarSwipe() {
   });
 
   viewbar.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== pointerId || consumed) return;
+    if (e.pointerId !== pointerId || consumed || viewbarEditing) return;
     const step = resolveBarStep(e.clientX - startX);
     if (step !== 0) {
       consumed = true;
@@ -1774,6 +1813,7 @@ function bindBackButton() {
 
 const DELETE_NOTE_NODE = "Workflowy 側のノードも削除されます。元に戻せません。";
 const DELETE_NOTE_DAY = "その日のノートごと Workflowy 側から削除されます。元に戻せません。";
+const DELETE_NOTE_PLACE = "この場所をビューから削除します。Workflowy 側のノードは残ります。";
 
 // note: 日付ノードのように「何が一緒に消えるか」が行の見た目から読めない場合だけ
 // 文面を差し替える。
@@ -2278,6 +2318,7 @@ function bindEvents() {
   });
 
   bindViewBarSwipe();
+  bindViewbarEdit();
 
   // 無限スクロール（下端付近で自動読み込み）: Daily の過去分と
   // Deadlines 完了グループの続き

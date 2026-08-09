@@ -27,6 +27,7 @@ export function migratePlaces(settings: Record<string, unknown>): {
 };
 export function visiblePlaces(places: Place[]): Place[];
 export function toggleInView(places: Place[], id: string): Place[] | null;
+export function editBadgeAction(place: Place): "delete" | "hide";
 export function movePlace(places: Place[], id: string, delta: number): Place[];
 export function reorderPlaces(places: Place[], orderedIds: string[]): Place[];
 

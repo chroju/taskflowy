@@ -525,7 +525,13 @@ button {
   width: 62px;
 }
 
+/* 編集モード中は末尾の編集ボタンの下に潜らないようスペーサーを広げる */
+.viewbar.editing .viewbar-track::after {
+  width: 78px;
+}
+
 .view-pill {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -560,6 +566,46 @@ button {
 
 .view-pill.active .view-dot {
   background: var(--accent);
+}
+
+/* 編集モード中、各ピル右上に出る削除/非表示バッジ */
+.view-pill-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--maroon);
+  color: #1a1a1a;
+}
+
+/* ビューバー右端の編集トグル */
+.viewbar-edit {
+  position: absolute;
+  right: 10px;
+  bottom: calc(9px + env(safe-area-inset-bottom));
+  flex: none;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--subtext0);
+  font: 500 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.viewbar-edit:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.viewbar-edit.active {
+  background: var(--accent-dim);
+  color: var(--accent-soft);
 }
 
 /* ビュー切り替えは横スライドではなくクロスフェード（バー上のスワイプと

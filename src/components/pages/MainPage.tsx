@@ -38,6 +38,7 @@ export const MainPage: FC = () => (
     {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する */}
     <nav id="viewbar" class="viewbar" aria-label="ビュー切り替え">
       <div id="viewbar-track" class="viewbar-track" role="tablist"></div>
+      <button id="btn-viewbar-edit" class="viewbar-edit" title="ビューを編集">編集</button>
     </nav>
 
     <button id="btn-add-task" class="fab" title="新しく書き留める">+</button>

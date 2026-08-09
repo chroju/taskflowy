@@ -40,7 +40,8 @@ npm run test:ui    # vitest UI起動
 - `api/daily.ts` - Dailyビュー用。ネイティブカレンダーの日付キー（`YYYY-MM-DD`、404=その日なし）を
   遡ってプローブし、日付グループを収集する（`/api/daily`が使用）。`toViewItem`は
   Daily/登録ノードビュー共通のアイテム変換
-- `api/time-markup.ts` - ノード名に埋め込む`<time>`マークアップのパース/生成
+- `api/time-markup.ts` - ノード名に埋め込む`<time>`マークアップのパース/生成。
+  `replaceNameText`はマークアップを残したまま本文だけ差し替える（リネーム用）
 - `api/jst.ts` - JST（UTC+9固定）の日付/時刻ユーティリティ。Dateのロケール依存メソッドは使わない
 - `api/notify.ts` - `selectDueNotifications`: 通知対象タスクを判定する純粋関数
 - `api/push.ts` - Web Push送信（`@block65/webcrypto-web-push`）とVAPID鍵ペア生成
@@ -53,8 +54,8 @@ npm run test:ui    # vitest UI起動
 - `scripts/tasks.js` - タスク一覧の純粋ロジック（Today/Deadlines/Nodesのグルーピング・タイトル正規化・
   日付フォーマット・スワイプ判定など）。DOM非依存でユニットテスト可能（`src/test/task-view.test.ts`）
 - `scripts/views.js` - ビュー統合の純粋ロジック（場所リストの移行・並べ替え・表示切り替え、
-  ビューバーのスワイプ判定、Daily表示ヘルパー、composeの送信先解決・ノート分割）。
-  テストは`src/test/views.test.ts`
+  ビューバーのスワイプ判定、Daily表示ヘルパー、composeの送信先解決・ノート分割、
+  詳細シートの種別切り替えラベル）。テストは`src/test/views.test.ts`
 - `scripts/utils.js` - `escapeHtml` / `stripHtml`のみ（Jotflowy由来の自由記述編集系ヘルパーは不要なため削除済み）
 - `styles/main.css` - スタイル（Charcoalテーマ=無彩色+期限切れ`#E39098`のみ。トークンは
   `design_handoff_taskflowy_views`のハンドオフ資料が正。基礎寸法は`design_handoff_workflowy_tasks`。
@@ -111,7 +112,17 @@ npm run test:ui    # vitest UI起動
   `DELETE /api/nodes/:id`）、行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。
   詳細シートはタスク/メモでレイアウトを分ける（メモは時刻·場所+note面の読み物レイアウト）。
   期限は詳細シートの「明日へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）、
-  メモはメモ行タップで編集（`POST /api/nodes/:id/note`）
+  メモはメモ行タップで編集（`POST /api/nodes/:id/note`）、タイトルはタイトルタップで編集
+  （`POST /api/nodes/:id/name`）。エディタ（期限/メモ/タイトル）は同時に1つだけ開く
+- **タイトル編集**: クライアントは表示テキスト（`plainName`相当）だけを送り、サーバが
+  `replaceNameText`（`time-markup.ts`）で既存の`<time>`マークアップを付け直す。よって
+  リネームで期限が消えない。Workflowyのインライン装飾（`<b>`など）は表示テキストに
+  畳まれているため、リネームすると失われる
+- **note ⇄ todo の切り替え**: 詳細シート下部の「メモにする」/「タスクにする」で
+  `layoutMode`を切り替える（`POST /api/nodes/:id/layout`、`{todo: boolean}`。todo以外は
+  Workflowy既定の`"bullets"`）。ラベルは`layoutActionLabel`（`views.js`）。Tasksビューは
+  layoutMode=todoのノードだけの一覧なので、メモに変えると`tasksState`から外してシートを閉じる。
+  逆にタスクにしたときは`tasksState`へ楽観的に追加する（親のパスは次の取得で埋まる）
 - **日付ノードの行操作**: Dailyの日付見出しも項目行と同じ操作対象。タップ=デイリーノートの
   詳細シート（見出し「デイリーノート」+タイトル`YYYY/M/D（曜）`=`dailyNoteTitle`、
   Workflowyで開く+削除のみ）、左スワイプ=その日ごと削除（`DELETE /api/nodes/YYYY-MM-DD`。

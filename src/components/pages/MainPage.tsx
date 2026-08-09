@@ -49,14 +49,16 @@ export const MainPage: FC = () => (
         <div class="sheet-grabber"></div>
         {/* メモのみ: 時刻 · 場所 */}
         <div id="sheet-item-meta" class="sheet-item-meta hidden"></div>
-        <div id="sheet-task-title" class="sheet-title"></div>
+        {/* クリックでその場編集（contenteditable。client.js の bindInlineEdit） */}
+        <div id="sheet-task-title" class="sheet-title" title="タイトルを編集"></div>
+
         <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
           <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
           <span class="sheet-prop-label">ノード</span>
           <span id="sheet-task-node" class="sheet-prop-value"></span>
           <span class="sheet-prop-label">メモ</span>
-          <button id="sheet-task-note" class="sheet-prop-value sheet-prop-edit sheet-note" title="メモを編集"></button>
+          <div id="sheet-task-note" class="sheet-prop-value sheet-prop-edit sheet-note" title="メモを編集"></div>
         </div>
 
         {/* 期限エディタ（期限行タップで開閉） */}
@@ -74,16 +76,8 @@ export const MainPage: FC = () => (
           </div>
         </div>
 
-        {/* メモエディタ（メモ行タップで開閉） */}
-        <div id="sheet-note-editor" class="sheet-editor hidden">
-          <textarea id="sheet-note-input" class="sheet-textarea" rows={3} placeholder="メモ"></textarea>
-          <div class="sheet-custom-row">
-            <button id="btn-sheet-cancel-note" class="btn-outline">キャンセル</button>
-            <button id="btn-sheet-save-note" class="chip-submit">保存</button>
-          </div>
-        </div>
-        {/* メモのみ: note を読むための面 */}
-        <div id="sheet-item-note" class="sheet-note-face hidden"></div>
+        {/* メモのみ: note の面。こちらもクリックでその場編集できる */}
+        <div id="sheet-item-note" class="sheet-note-face hidden" title="メモを編集"></div>
         <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
           <span>Workflowy で開く</span>
           <span class="sheet-link-arrow">↗</span>
@@ -96,6 +90,7 @@ export const MainPage: FC = () => (
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
           </button>
+          <button id="btn-sheet-layout" class="sheet-action">メモにする</button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
         </div>

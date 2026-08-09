@@ -46,6 +46,7 @@ import {
   destLabel,
   destSendTarget,
   splitNoteDraft,
+  layoutActionLabel,
   toggleInView,
   movePlace,
   reorderPlaces,
@@ -120,10 +121,7 @@ const sheetDueEditor = $("sheet-due-editor");
 const sheetDateInput = $("sheet-date-input");
 const sheetTimeInput = $("sheet-time-input");
 const btnSheetSetDue = $("btn-sheet-set-due");
-const sheetNoteEditor = $("sheet-note-editor");
-const sheetNoteInput = $("sheet-note-input");
-const btnSheetSaveNote = $("btn-sheet-save-note");
-const btnSheetCancelNote = $("btn-sheet-cancel-note");
+const btnSheetLayout = $("btn-sheet-layout");
 
 const sheetAddEl = $("sheet-add");
 const composeMain = $("compose-main");
@@ -1280,11 +1278,16 @@ function fillSheet() {
 
   sheetTaskTitle.textContent = normalizeTitle(entity.plainName) || "（無題）";
   sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
+  // 日付ノードの名前は日付キーそのものなので編集させない
+  sheetTaskTitle.classList.toggle("editable", !sheetDate);
   sheetItemMeta.classList.toggle("hidden", !sheetIsMemo && !sheetDate);
   sheetTaskProps.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
-  sheetItemNote.classList.toggle("hidden", !sheetIsMemo || !entity.note);
+  // note が空でもクリックして書き足せるよう、メモレイアウトでは面を常に出す
+  sheetItemNote.classList.toggle("hidden", !sheetIsMemo);
   btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
   btnSheetComplete.classList.toggle("hidden", !!sheetDate);
+  btnSheetLayout.classList.toggle("hidden", !!sheetDate);
+  btnSheetLayout.textContent = layoutActionLabel(!sheetIsMemo);
   sheetActions.classList.toggle("only-delete", !!sheetDate);
 
   if (sheetDate) {
@@ -1293,7 +1296,8 @@ function fillSheet() {
   } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
     sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
-    if (entity.note) sheetItemNote.textContent = stripHtml(entity.note);
+    sheetItemNote.textContent = entity.note ? stripHtml(entity.note) : "メモを追加";
+    sheetItemNote.classList.toggle("empty", !entity.note);
   } else {
     sheetTaskDue.textContent = formatDueDetail(entity.due, today);
     sheetTaskDue.classList.toggle("overdue", !entity.completed && classifyDue(entity.due, today) === "overdue");
@@ -1333,7 +1337,6 @@ function openDailyNoteSheet(group) {
 function showSheet() {
   fillSheet();
   sheetDueEditor.classList.add("hidden");
-  sheetNoteEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
   armHistory();
 }
@@ -1341,22 +1344,10 @@ function showSheet() {
 function toggleDueEditor() {
   if (!sheetTask) return;
   const opening = sheetDueEditor.classList.contains("hidden");
-  sheetNoteEditor.classList.add("hidden");
   sheetDueEditor.classList.toggle("hidden", !opening);
   if (opening) {
     sheetDateInput.value = sheetTask.due ? sheetTask.due.date : "";
     sheetTimeInput.value = sheetTask.due && sheetTask.due.time ? sheetTask.due.time : "";
-  }
-}
-
-function toggleNoteEditor() {
-  if (!sheetTask) return;
-  const opening = sheetNoteEditor.classList.contains("hidden");
-  sheetDueEditor.classList.add("hidden");
-  sheetNoteEditor.classList.toggle("hidden", !opening);
-  if (opening) {
-    sheetNoteInput.value = sheetTask.note ? stripHtml(sheetTask.note) : "";
-    sheetNoteInput.focus();
   }
 }
 
@@ -1374,25 +1365,157 @@ async function applySheetDue(dateStr, timeStr) {
   }
 }
 
-async function saveSheetNote() {
-  if (!sheetTask) return;
+// ---- インライン編集（contenteditable） ----
+//
+// タイトル・メモは別枠のエディタを開かず、表示している面をそのまま書き換える。
+// フォーカスが外れたら保存し、Escape で取り消す。単一行（タイトル）は Enter でも
+// 確定する。値が変わっていなければ API は呼ばない。
+
+let inlineEditing = null; // { el, original } 編集中の面
+
+// 編集中の面があれば確定させる。シートを閉じる/別の操作へ移る前に呼ぶ。
+function commitInlineEdit() {
+  if (inlineEditing) inlineEditing.el.blur();
+}
+
+function bindInlineEdit(el, { multiline, placeholder, currentValue, save }) {
+  el.dataset.placeholder = placeholder;
+
+  el.addEventListener("click", () => {
+    if (!sheetTask || sheetDate || inlineEditing) return;
+    const original = currentValue();
+    el.textContent = original;
+    el.contentEditable = "plaintext-only";
+    el.classList.add("inline-editing");
+    inlineEditing = { el, original };
+    el.focus();
+    // キャレットは末尾に置く（クリック位置に合わせず、素直に続きから打てるように）
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      el.textContent = inlineEditing ? inlineEditing.original : el.textContent;
+      inlineEditing = null;
+      el.contentEditable = "false";
+      el.classList.remove("inline-editing");
+      fillSheet();
+    } else if (e.key === "Enter" && !multiline) {
+      e.preventDefault();
+      el.blur();
+    }
+  });
+
+  el.addEventListener("blur", async () => {
+    if (!inlineEditing || inlineEditing.el !== el) return;
+    const { original } = inlineEditing;
+    inlineEditing = null;
+    el.contentEditable = "false";
+    el.classList.remove("inline-editing");
+    const value = el.textContent;
+    if (value !== original) {
+      // シートを閉じながらの確定もあるので、対象は今のうちに捕まえておく
+      const entity = sheetTask;
+      const origin = sheetOrigin;
+      try {
+        await save(entity, origin, value);
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+    if (sheetTask) fillSheet();
+  });
+}
+
+// 名前はサーバ側で <time> 期限マークアップを付け直すので、送るのは表示テキスト
+// だけでよい。名前は一覧の行にも出るので保存後は render() まで回す。
+async function saveSheetTitle(entity, origin, name) {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    showToast("タイトルは空にできません", true);
+    return;
+  }
+  await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/name`, {
+    method: "POST",
+    body: JSON.stringify({ name: trimmed }),
+  });
+  // 表示に使われるのは plainName だけ（raw name は <time> 込みでサーバ側の値が正）
+  entity.plainName = trimmed;
+  persistOriginCache(origin);
+  render();
+  showToast("タイトルを保存しました");
+}
+
+async function saveSheetNote(entity, origin, note) {
+  await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/note`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+  entity.note = note || null;
+  persistOriginCache(origin);
+  render();
+  showToast("メモを保存しました");
+}
+
+// note ⇄ todo（Workflowy の layoutMode）。Tasks ビューは layoutMode="todo" の
+// ノードだけを集めた一覧なので、メモに変えたら tasksState からも外す。
+async function toggleSheetLayout() {
+  if (!sheetTask || sheetDate) return;
+  commitInlineEdit();
   const entity = sheetTask;
-  const note = sheetNoteInput.value;
-  btnSheetSaveNote.disabled = true;
+  const origin = sheetOrigin;
+  const wasTodo = !sheetIsMemo;
+  btnSheetLayout.disabled = true;
   try {
-    await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/note`, {
+    await apiRequest(`/nodes/${encodeURIComponent(entity.id)}/layout`, {
       method: "POST",
-      body: JSON.stringify({ note }),
+      body: JSON.stringify({ todo: !wasTodo }),
     });
-    entity.note = note || null;
-    persistOriginCache(sheetOrigin);
-    fillSheet();
-    sheetNoteEditor.classList.add("hidden");
-    showToast("メモを保存しました");
+
+    if (wasTodo) {
+      // タスク → メモ: Tasks ビューの対象から外れる
+      tasksState = tasksState.filter((t) => t.id !== entity.id);
+    } else if (!tasksState.some((t) => t.id === entity.id)) {
+      // メモ → タスク: Tasks ビューに載る。親のパスは次の取得で埋まる
+      tasksState = [
+        {
+          id: entity.id,
+          name: entity.name,
+          plainName: entity.plainName,
+          note: entity.note,
+          parentId: null,
+          parentPath: [placeLabelForOrigin(origin)].filter(Boolean),
+          createdAt: entity.createdAt || Math.floor(Date.now() / 1000),
+          completedAt: null,
+          due: entity.due || null,
+          completed: !!entity.completed,
+        },
+        ...tasksState,
+      ];
+    }
+    setTasksCache(tasksState);
+
+    if (origin === "tasks") {
+      // Tasks ビューはタスクだけの一覧なので、メモにした行はもう出せない
+      closeViaBack();
+    } else {
+      entity.todo = !wasTodo;
+      persistOriginCache(origin);
+      sheetIsMemo = !entity.todo;
+      fillSheet();
+    }
+    render();
+    showToast(wasTodo ? "メモにしました" : "タスクにしました");
   } catch (e) {
     showToast(e.message, true);
   } finally {
-    btnSheetSaveNote.disabled = false;
+    btnSheetLayout.disabled = false;
   }
 }
 
@@ -1431,6 +1554,8 @@ function closeTopLayer() {
   } else if (layer === "picker") {
     closePicker();
   } else if (layer === "detail") {
+    // 編集中の面は捨てずに確定させる（blur ハンドラが sheetTask を読むので先に）
+    commitInlineEdit();
     sheetTaskEl.classList.add("hidden");
     sheetTask = null;
     sheetDate = null;
@@ -1892,7 +2017,25 @@ function bindEvents() {
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
-  sheetTaskNote.addEventListener("click", toggleNoteEditor);
+  btnSheetLayout.addEventListener("click", toggleSheetLayout);
+
+  // タイトル・メモはクリックでその場編集。メモ面はタスク（定義リストの「メモ」行）と
+  // メモ（note の読み物面）で要素が分かれるので、同じ保存処理を両方に結ぶ。
+  const noteValue = () => (sheetTask && sheetTask.note ? stripHtml(sheetTask.note) : "");
+  bindInlineEdit(sheetTaskTitle, {
+    multiline: false,
+    placeholder: "タイトル",
+    currentValue: () => normalizeTitle(sheetTask.plainName),
+    save: saveSheetTitle,
+  });
+  [sheetTaskNote, sheetItemNote].forEach((el) => {
+    bindInlineEdit(el, {
+      multiline: true,
+      placeholder: "メモ",
+      currentValue: noteValue,
+      save: saveSheetNote,
+    });
+  });
 
   sheetTaskEl.querySelectorAll(".sheet-due-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -1910,9 +2053,6 @@ function bindEvents() {
     }
     applySheetDue(date || localDateString(), time || undefined);
   });
-
-  btnSheetSaveNote.addEventListener("click", saveSheetNote);
-  btnSheetCancelNote.addEventListener("click", () => sheetNoteEditor.classList.add("hidden"));
 
   btnConfirmDelete.addEventListener("click", confirmDelete);
   btnCancelDelete.addEventListener("click", closeViaBack);

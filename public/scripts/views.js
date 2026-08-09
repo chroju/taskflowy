@@ -210,6 +210,14 @@ export function visibleDailyGroups(groups, showCompleted) {
     .filter((g) => g.items.length > 0);
 }
 
+// ---- Note / todo switching (detail sheet) ----
+
+// Label of the detail sheet's layout button: it names the state the tap
+// switches to, not the current one.
+export function layoutActionLabel(todo) {
+  return todo ? "メモにする" : "タスクにする";
+}
+
 // ---- Compose ----
 
 // Compose destination:

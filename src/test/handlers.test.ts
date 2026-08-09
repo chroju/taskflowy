@@ -658,6 +658,130 @@ describe("POST /api/nodes/:id/note", () => {
   });
 });
 
+describe("POST /api/nodes/:id/name", () => {
+  beforeEach(() => {
+    mockGetNode.mockReset();
+    mockUpdateNode.mockReset();
+  });
+
+  it("updates the node name", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "node-abc", name: "Buy milk" }));
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/name", {
+      method: "POST",
+      body: JSON.stringify({ name: "Buy soy milk" }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { name: "Buy soy milk" });
+  });
+
+  it("preserves the embedded time markup", async () => {
+    mockGetNode.mockResolvedValue(
+      makeNode({
+        id: "node-abc",
+        name: 'Buy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>',
+      })
+    );
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/name", {
+      method: "POST",
+      body: JSON.stringify({ name: "Buy soy milk" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", {
+      name: 'Buy soy milk <time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>',
+    });
+  });
+
+  it("rejects a non-string name", async () => {
+    const req = makeRequest("/api/nodes/node-abc/name", {
+      method: "POST",
+      body: JSON.stringify({ name: 42 }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank name", async () => {
+    const req = makeRequest("/api/nodes/node-abc/name", {
+      method: "POST",
+      body: JSON.stringify({ name: "   " }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the node does not exist", async () => {
+    mockGetNode.mockResolvedValue(null);
+
+    const req = makeRequest("/api/nodes/node-abc/name", {
+      method: "POST",
+      body: JSON.stringify({ name: "Buy soy milk" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(404);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/nodes/:id/layout", () => {
+  beforeEach(() => {
+    mockUpdateNode.mockReset();
+  });
+
+  it("turns a note into a todo", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/layout", {
+      method: "POST",
+      body: JSON.stringify({ todo: true }),
+    });
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as { ok: boolean };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { layoutMode: "todo" });
+  });
+
+  it("turns a todo back into a note", async () => {
+    mockUpdateNode.mockResolvedValue(undefined);
+
+    const req = makeRequest("/api/nodes/node-abc/layout", {
+      method: "POST",
+      body: JSON.stringify({ todo: false }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("node-abc", { layoutMode: "bullets" });
+  });
+
+  it("rejects a non-boolean todo", async () => {
+    const req = makeRequest("/api/nodes/node-abc/layout", {
+      method: "POST",
+      body: JSON.stringify({ todo: "yes" }),
+    });
+    const res = await app.fetch(req, testEnv);
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+});
+
 describe("auth mirrors the encrypted API key into KV", () => {
   it("stores the encrypted key in KV on /api/auth", async () => {
     const req = new Request("http://localhost/api/auth", {

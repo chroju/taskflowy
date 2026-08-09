@@ -5,7 +5,7 @@ import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
 import { extractTasks } from "./tasks";
 import { collectDailyHistory, toViewItem } from "./daily";
-import { setTimeMarkup, stripTimeMarkup } from "./time-markup";
+import { setTimeMarkup, stripTimeMarkup, replaceNameText } from "./time-markup";
 import { sendPush } from "./push";
 import {
   getSubscriptions,
@@ -256,6 +256,42 @@ api.post("/nodes/:id/note", async (c) => {
 
   const client = new WorkflowyClient(apiKey);
   await client.updateNode(nodeId, { note: body.note });
+  return c.json({ ok: true });
+});
+
+// Rename a node (title editing in the detail sheet). The client sends the
+// display text, so the existing <time> due-date markup is re-attached here
+// instead of being wiped by the rename.
+api.post("/nodes/:id/name", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const body = await c.req.json<{ name: unknown }>();
+
+  if (typeof body.name !== "string" || body.name.trim() === "") {
+    return c.json({ error: "name (non-empty string) required" }, 400);
+  }
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (!node) return c.json({ error: "node not found" }, 404);
+
+  await client.updateNode(nodeId, { name: replaceNameText(node.name, body.name) });
+  return c.json({ ok: true });
+});
+
+// Switch a node between note and todo (layoutMode). "bullets" is Workflowy's
+// default layout, i.e. a plain note.
+api.post("/nodes/:id/layout", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const body = await c.req.json<{ todo: unknown }>();
+
+  if (typeof body.todo !== "boolean") {
+    return c.json({ error: "todo (boolean) required" }, 400);
+  }
+
+  const client = new WorkflowyClient(apiKey);
+  await client.updateNode(nodeId, { layoutMode: body.todo ? "todo" : "bullets" });
   return c.json({ ok: true });
 });
 

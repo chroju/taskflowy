@@ -281,6 +281,7 @@ button {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .task-row:hover {
@@ -353,6 +354,22 @@ button {
   flex: none;
   text-align: right;
   padding-top: 3px;
+}
+
+/* サブツリー展開への入口。子の有無は事前に分からないため、押した後で
+   0 件ならトーストに任せる（見た目は常に出す） */
+.row-expand-chevron {
+  flex: none;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--overlay0);
+  font: 400 20px/1 var(--font-sans);
+  cursor: pointer;
 }
 
 .task-due {
@@ -587,6 +604,7 @@ button {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .date-header-row:hover {
@@ -659,22 +677,43 @@ button {
   word-break: break-word;
 }
 
-/* 本文を上げるだけでなくノートを下げて比を稼ぐ。色も一段落として、
-   本文とノートを取り違えないようにする。 */
-.memo-note {
+/* 子ノードのプレビュー（先頭数件のタイトルを薄く連ねる）。ボタンだが
+   note 表示だったころの見た目を踏襲し、本文の下に軽く添える程度に留める。
+   子が無い行には出さない（bindChildPreview が判定する） */
+.child-preview {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-top: 6px;
-  font: 400 13px/1.7 var(--font-sans);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  font: 400 13px/1.5 var(--font-sans);
   color: var(--subtext0);
-  white-space: pre-wrap;
-  word-break: break-word;
+  text-align: left;
+  cursor: pointer;
+}
+
+.child-preview-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.child-preview-chevron {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .task-row.has-time {
   gap: 13px;
 }
 
-.task-row.done .memo-name,
-.task-row.done .memo-note {
+.task-row.done .memo-name {
   color: var(--overlay0);
   text-decoration: line-through;
 }

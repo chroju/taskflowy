@@ -18,7 +18,7 @@ export const MainPage: FC = () => (
 
     <header class="header">
       <div class="header-text">
-        <button id="btn-back" class="header-back hidden">‹ Nodes</button>
+        <button id="btn-back" class="header-back hidden">‹ 戻る</button>
         <h1 id="screen-title">Today</h1>
         <div id="screen-count" class="screen-count"></div>
       </div>

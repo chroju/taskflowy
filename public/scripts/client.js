@@ -86,6 +86,11 @@ let dailyFetchedAt = null;
 let nodeViews = {};
 const nodeViewLoading = new Set();
 
+// サブツリードリルダウン（行タップで任意ノードの子を展開）。何階層でも
+// 重ね開けるスタック。メモリ上のみで、登録済みの場所とは異なり永続化しない。
+let subtreeStack = []; // { nodeId, title, items }[]
+let subtreeLoading = false;
+
 const REMINDER_HOURS = [7, 8, 9, 10, 21];
 const TAB_TITLES = { today: "Today", due: "Deadlines", nodes: "Nodes" };
 
@@ -370,13 +375,19 @@ function currentPlace() {
 
 function placeLabelForOrigin(origin) {
   if (origin === "daily") return "Daily";
+  if (origin === "subtree") {
+    const top = subtreeStack[subtreeStack.length - 1];
+    return top ? top.title : "";
+  }
   const place = settings.places.find((p) => p.id === origin);
   return place ? place.name : "";
 }
 
 function render() {
   renderViewBar();
-  if (view === "tasks") {
+  if (subtreeStack.length) {
+    renderSubtreeView();
+  } else if (view === "tasks") {
     renderTasksView();
   } else if (view === "daily") {
     renderDailyView();
@@ -443,6 +454,7 @@ function switchView(next) {
   settings.lastView = target;
   saveSettings();
   selectedNodeKey = null;
+  subtreeStack = [];
   // クロスフェードで切り替える（アニメーションを最初から再生し直す）
   taskList.classList.remove("view-fade");
   void taskList.offsetWidth;
@@ -699,17 +711,26 @@ function renderNodeView() {
     return;
   }
 
-  const showCompleted = showCompletedFor(settings.showCompletedTasks, view);
-  const items = filterCompletedItems(entry.items, showCompleted);
-  const completedCount = entry.items.length - filterCompletedItems(entry.items, false).length;
+  renderItemListScreen(entry.items, view);
+}
+
+// Renders the shared "list of item rows" body used by both the registered
+// node view and the subtree drilldown view: completed-count math, empty
+// states, the completed-toggle row, and the item rows themselves. Assumes
+// taskList has already been cleared and items are fully loaded (callers
+// handle their own auth-check / loading-spinner branches beforehand).
+function renderItemListScreen(allItems, origin, scope = origin) {
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, scope);
+  const items = filterCompletedItems(allItems, showCompleted);
+  const completedCount = allItems.length - filterCompletedItems(allItems, false).length;
 
   screenCount.textContent = `${items.length} 件`;
-  if (!entry.items.length) {
+  if (!allItems.length) {
     taskList.innerHTML = '<p class="list-empty">まだ何もありません</p>';
     return;
   }
 
-  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, view));
+  if (completedCount > 0) taskList.appendChild(buildCompletedToggle(completedCount, scope));
 
   if (!items.length) {
     const empty = document.createElement("p");
@@ -720,8 +741,80 @@ function renderNodeView() {
   }
 
   for (const item of items) {
-    taskList.appendChild(buildItemRow(item, { showTime: false, origin: view }));
+    taskList.appendChild(buildItemRow(item, { showTime: false, origin }));
   }
+}
+
+// ==================== サブツリードリルダウン（任意ノードの子展開） ====================
+//
+// 行タップで対象ノードの子（1階層）を取得し、子が1件以上あれば新しい画面を
+// スタックに重ね開く。子が0件ならその場にトーストを出して留まる。何階層
+// でも重ね開けるが、各画面は常に直下の子だけを表示する（登録ノードビューと
+// 同じレンダリング・行操作をそのまま再利用する）。
+
+// 子ノードの有無・中身は一覧取得時点では分からないため、行を描画した直後に
+// 各行が自分で /nodes/:id/children を取得してプレビューを差し込む（子が
+// 無ければ何も出さない）。プレビュー自体がタップ領域を兼ね、サブツリー
+// ドリルダウンへの入口になる。行本体のタップは詳細シートに使うため、
+// クリックはここで止める。
+const CHILD_PREVIEW_LIMIT = 3;
+
+async function bindChildPreview(body, nodeId, title) {
+  let preview;
+  try {
+    const data = await apiRequest(`/nodes/${encodeURIComponent(nodeId)}/children`);
+    if (!data.items.length) return;
+    const names = data.items
+      .slice(0, CHILD_PREVIEW_LIMIT)
+      .map((child) => normalizeTitle(child.plainName) || "（無題）")
+      .join(" ・ ");
+    preview = document.createElement("button");
+    preview.type = "button";
+    preview.className = "child-preview";
+    preview.innerHTML = `<span class="child-preview-text"></span><span class="child-preview-chevron" aria-hidden="true">›</span>`;
+    preview.querySelector(".child-preview-text").textContent = names;
+  } catch {
+    return; // プレビューは補助表示なので、失敗しても静かに諦める
+  }
+  preview.addEventListener("click", (e) => {
+    e.stopPropagation();
+    expandSubtree(nodeId, title);
+  });
+  body.appendChild(preview);
+}
+
+async function expandSubtree(nodeId, title) {
+  if (subtreeLoading) return;
+  subtreeLoading = true;
+  try {
+    const data = await apiRequest(`/nodes/${encodeURIComponent(nodeId)}/children`);
+    if (!data.items.length) {
+      showToast("子ノードはありません");
+      return;
+    }
+    subtreeStack.push({ nodeId, title, items: data.items });
+    render();
+    armHistory();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    subtreeLoading = false;
+  }
+}
+
+function popSubtree() {
+  subtreeStack.pop();
+  render();
+}
+
+function renderSubtreeView() {
+  tabbar.classList.add("hidden");
+  btnBack.classList.remove("hidden");
+  const frame = subtreeStack[subtreeStack.length - 1];
+  screenTitle.textContent = frame.title;
+  taskList.innerHTML = "";
+
+  renderItemListScreen(frame.items, "subtree", `subtree:${frame.nodeId}`);
 }
 
 function renderList(node) {
@@ -854,6 +947,21 @@ function renderNodeList() {
   taskList.appendChild(container);
 }
 
+// サブツリー展開への入口（子の有無は事前判定しない。無ければ expandSubtree
+// 側がトーストを出す）。行タップは詳細シートに使うため独立したボタンにする。
+function buildExpandChevron(onExpand) {
+  const chevron = document.createElement("button");
+  chevron.type = "button";
+  chevron.className = "row-expand-chevron";
+  chevron.title = "子を展開";
+  chevron.textContent = "›";
+  chevron.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onExpand();
+  });
+  return chevron;
+}
+
 function buildTaskRow(task, { showParent }) {
   const today = localDateString();
 
@@ -900,6 +1008,8 @@ function buildTaskRow(task, { showParent }) {
     meta.appendChild(due);
     row.appendChild(meta);
   }
+
+  row.appendChild(buildExpandChevron(() => expandSubtree(task.id, normalizeTitle(task.plainName) || "（無題）")));
 
   wrap.appendChild(row);
   applyRowState(row, task);
@@ -988,13 +1098,6 @@ function buildItemRow(item, { showTime, origin }) {
   name.textContent = normalizeTitle(item.plainName) || "（無題）";
   body.appendChild(name);
 
-  if (item.note) {
-    const note = document.createElement("div");
-    note.className = "memo-note";
-    note.textContent = stripHtml(item.note);
-    body.appendChild(note);
-  }
-
   // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。
   if (item.todo) {
     const tagRow = document.createElement("div");
@@ -1018,6 +1121,8 @@ function buildItemRow(item, { showTime, origin }) {
   row.appendChild(body);
   wrap.appendChild(row);
   applyItemRowState(row, item);
+
+  bindChildPreview(body, item.id, normalizeTitle(item.plainName) || "（無題）");
 
   bindRowSwipe(wrap, row, {
     onToggleComplete: () => toggleItemComplete(item, row, origin),
@@ -1077,6 +1182,7 @@ async function toggleComplete(task, row) {
 function persistOriginCache(origin) {
   if (origin === "tasks") setTasksCache(tasksState);
   else if (origin === "daily") saveDailyCache();
+  else if (origin === "subtree") return; // メモリ上のみ、永続化しない
   else saveNodeViewsCache();
 }
 
@@ -1137,6 +1243,9 @@ function removeItemFromOrigin(id, origin) {
       .map((g) => ({ ...g, items: g.items.filter((i) => i.id !== id) }))
       .filter((g) => g.items.length > 0);
     saveDailyCache();
+  } else if (origin === "subtree") {
+    const top = subtreeStack[subtreeStack.length - 1];
+    if (top) top.items = top.items.filter((i) => i.id !== id);
   } else if (nodeViews[origin]) {
     nodeViews[origin] = {
       ...nodeViews[origin],
@@ -1196,7 +1305,11 @@ function scheduleTask(task, dateStr, timeStr) {
 // every row in every view (tasks and memos are the same Workflowy nodes).
 // Direction is locked in on the first move past the threshold; vertical pans
 // stay with the browser via touch-action. handlers.deleteOnly drops the right
-// swipe for rows with no completed state (the Daily date headings).
+// swipe for rows with no completed state (the Daily date headings). Subtree
+// expansion (a row's children) is a separate affordance (the chevron button),
+// not part of this gesture set -- a long-press variant was tried and dropped
+// because Chrome for Android's own touch-and-hold handling swallowed it
+// before our handler saw it.
 function bindRowSwipe(wrap, row, handlers) {
   const deleteOnly = !!handlers.deleteOnly;
   let activePointerId = null;
@@ -1597,6 +1710,7 @@ function uiLayerFlags() {
     deleteOpen: !sheetDeleteEl.classList.contains("hidden"),
     pickerOpen: composeOpen && !composePicker.classList.contains("hidden"),
     detailOpen: !sheetTaskEl.classList.contains("hidden"),
+    subtreeOpen: subtreeStack.length > 0,
     composeOpen,
     settingsOpen: !screenSettings.classList.contains("hidden"),
     drilldown: view === "tasks" && tab === "nodes" && !!selectedNodeKey,
@@ -1624,6 +1738,8 @@ function closeTopLayer() {
     sheetTaskEl.classList.add("hidden");
     sheetTask = null;
     sheetDate = null;
+  } else if (layer === "subtree") {
+    popSubtree();
   } else if (layer === "compose") {
     sheetAddEl.classList.add("hidden");
   } else if (layer === "settings") {
@@ -1991,6 +2107,7 @@ function bindEvents() {
     btn.addEventListener("click", () => {
       tab = btn.dataset.tab;
       selectedNodeKey = null;
+      subtreeStack = [];
       render();
       syncHistoryArm(); // ドリルダウンをタブ切り替えで抜けたら番兵を回収
     });

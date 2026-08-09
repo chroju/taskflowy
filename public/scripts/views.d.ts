@@ -45,6 +45,7 @@ export interface UiLayerFlags {
   deleteOpen: boolean;
   pickerOpen: boolean;
   detailOpen: boolean;
+  subtreeOpen: boolean;
   composeOpen: boolean;
   settingsOpen: boolean;
   drilldown: boolean;
@@ -52,7 +53,7 @@ export interface UiLayerFlags {
 
 export function topUiLayer(
   flags: UiLayerFlags
-): "share" | "delete" | "picker" | "detail" | "compose" | "settings" | "drilldown" | null;
+): "share" | "delete" | "picker" | "detail" | "subtree" | "compose" | "settings" | "drilldown" | null;
 
 export type ShowCompletedState = Record<string, boolean> | boolean | undefined | null;
 export function showCompletedFor(state: ShowCompletedState, scope: string): boolean;

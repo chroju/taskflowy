@@ -165,13 +165,24 @@ export function itemTimeLabel(createdAt) {
 
 // Which open UI layer the back gesture should close first. Sheets stack over
 // screens: share-format sheet > delete confirmation > compose's destination
-// picker > detail sheet > compose sheet > settings > node drilldown. Returns
-// null when nothing is open, i.e. back may leave the app.
-export function topUiLayer({ shareOpen, deleteOpen, pickerOpen, detailOpen, composeOpen, settingsOpen, drilldown }) {
+// picker > detail sheet > subtree drilldown (any-node expand) > compose sheet
+// > settings > node-summary drilldown. Returns null when nothing is open,
+// i.e. back may leave the app.
+export function topUiLayer({
+  shareOpen,
+  deleteOpen,
+  pickerOpen,
+  detailOpen,
+  subtreeOpen,
+  composeOpen,
+  settingsOpen,
+  drilldown,
+}) {
   if (shareOpen) return "share";
   if (deleteOpen) return "delete";
   if (pickerOpen) return "picker";
   if (detailOpen) return "detail";
+  if (subtreeOpen) return "subtree";
   if (composeOpen) return "compose";
   if (settingsOpen) return "settings";
   if (drilldown) return "drilldown";

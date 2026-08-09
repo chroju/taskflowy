@@ -189,6 +189,7 @@ describe("topUiLayer", () => {
     detailOpen: false,
     composeOpen: false,
     settingsOpen: false,
+    subtreeOpen: false,
     drilldown: false,
   };
 
@@ -213,9 +214,22 @@ describe("topUiLayer", () => {
     expect(topUiLayer({ ...none, composeOpen: true })).toBe("compose");
   });
 
+  it("closes an open sheet before leaving a subtree drilldown", () => {
+    expect(topUiLayer({ ...none, detailOpen: true, subtreeOpen: true })).toBe("detail");
+    expect(topUiLayer({ ...none, subtreeOpen: true })).toBe("subtree");
+  });
+
+  it("closes a subtree drilldown before the compose sheet", () => {
+    expect(topUiLayer({ ...none, subtreeOpen: true, composeOpen: true })).toBe("subtree");
+  });
+
   it("closes an open sheet before leaving a drilldown", () => {
     expect(topUiLayer({ ...none, detailOpen: true, drilldown: true })).toBe("detail");
     expect(topUiLayer({ ...none, drilldown: true })).toBe("drilldown");
+  });
+
+  it("closes a subtree drilldown before the node-summary drilldown", () => {
+    expect(topUiLayer({ ...none, subtreeOpen: true, drilldown: true })).toBe("subtree");
   });
 
   it("closes the settings screen", () => {

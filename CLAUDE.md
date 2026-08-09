@@ -20,6 +20,10 @@ npm run test:run   # テストを1回実行
 npm run test:ui    # vitest UI起動
 ```
 
+## Git Workflow
+
+- コミットメッセージとPR（タイトル・本文）は英語で書く
+
 ## Testing Policy
 
 - 新機能・バグ修正は必ずテストを先に書く（TDD）

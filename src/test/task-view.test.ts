@@ -20,6 +20,7 @@ const {
   groupNodeTasks,
   donutDash,
   workflowyUrl,
+  shareText,
   swipeDirection,
   resolveSwipeAction,
   clampDx,
@@ -484,6 +485,21 @@ describe("workflowyUrl", () => {
     expect(workflowyUrl("a1b2c3d4-e5f6-7890-abcd-ef1234567890")).toBe(
       "https://workflowy.com/#/ef1234567890"
     );
+  });
+});
+
+describe("shareText", () => {
+  it("joins name and note with a blank line", () => {
+    expect(shareText("買い物リスト", "牛乳・卵")).toBe("買い物リスト\n\n牛乳・卵");
+  });
+
+  it("strips HTML from the note", () => {
+    expect(shareText("タイトル", "<b>太字</b>のメモ")).toBe("タイトル\n\n太字のメモ");
+  });
+
+  it("returns the name alone when there is no note", () => {
+    expect(shareText("タイトルのみ", null)).toBe("タイトルのみ");
+    expect(shareText("タイトルのみ", "")).toBe("タイトルのみ");
   });
 });
 

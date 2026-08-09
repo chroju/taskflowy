@@ -72,6 +72,7 @@ export function groupNodeTasks<T extends TaskLike>(tasks: T[], showCompleted?: b
 export function donutDash(done: number, total: number): string;
 
 export function workflowyUrl(nodeId: string): string;
+export function shareText(name: string, note: string | null | undefined): string;
 
 export function swipeDirection(dx: number, dy: number, threshold?: number): "horizontal" | "vertical" | null;
 export function resolveSwipeAction(

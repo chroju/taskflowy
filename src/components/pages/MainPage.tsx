@@ -90,9 +90,31 @@ export const MainPage: FC = () => (
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
           </button>
+          <button id="btn-sheet-share" class="sheet-action" title="共有">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <path d="M8.59 13.51l6.83 3.98"></path>
+              <path d="M15.41 6.51l-6.82 3.98"></path>
+            </svg>
+          </button>
           <button id="btn-sheet-layout" class="sheet-action">メモにする</button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
+        </div>
+      </div>
+    </div>
+
+    {/* 共有形式ピッカー（共有ボタンタップで開く） */}
+    <div id="sheet-share" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-share"></div>
+      <div class="sheet-panel">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-title">共有する形式</div>
+        <div class="sheet-actions">
+          <button id="btn-share-url" class="sheet-action">URL</button>
+          <button id="btn-share-text" class="sheet-action primary">テキスト</button>
         </div>
       </div>
     </div>

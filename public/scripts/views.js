@@ -164,10 +164,11 @@ export function itemTimeLabel(createdAt) {
 // ---- Back-button layers ----
 
 // Which open UI layer the back gesture should close first. Sheets stack over
-// screens: delete confirmation > compose's destination picker > detail
-// sheet > compose sheet > settings > node drilldown. Returns null when
-// nothing is open, i.e. back may leave the app.
-export function topUiLayer({ deleteOpen, pickerOpen, detailOpen, composeOpen, settingsOpen, drilldown }) {
+// screens: share-format sheet > delete confirmation > compose's destination
+// picker > detail sheet > compose sheet > settings > node drilldown. Returns
+// null when nothing is open, i.e. back may leave the app.
+export function topUiLayer({ shareOpen, deleteOpen, pickerOpen, detailOpen, composeOpen, settingsOpen, drilldown }) {
+  if (shareOpen) return "share";
   if (deleteOpen) return "delete";
   if (pickerOpen) return "picker";
   if (detailOpen) return "detail";
@@ -323,4 +324,19 @@ export function destSendTarget(dest, places, todayStr = localDateString()) {
     return place && place.ref ? { targetType: "node", parentId: place.ref } : null;
   }
   return dest.nodeId ? { targetType: "node", parentId: dest.nodeId } : null;
+}
+
+// ---- Web Share Target ----
+
+// Parses the `?title=&text=&url=` query string a share_target GET request
+// arrives with into a single draft string for the note-mode compose
+// textarea (feeds into splitNoteDraft: first line becomes the node name).
+// Returns null when none of the three fields are present.
+export function parseSharePayload(search) {
+  const params = new URLSearchParams(search);
+  const title = params.get("title") || "";
+  const text = params.get("text") || "";
+  const url = params.get("url") || "";
+  const lines = [title, text, url].filter(Boolean);
+  return lines.length ? lines.join("\n\n") : null;
 }

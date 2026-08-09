@@ -2,6 +2,8 @@
 // swipe judgement). DOM wiring lives in client.js; these are unit-testable in
 // isolation (see src/test/task-view.test.ts).
 
+import { stripHtml } from "./utils.js";
+
 // ---- Date helpers ----
 
 // Returns local YYYY-MM-DD for a given Date (defaults to now).
@@ -289,6 +291,13 @@ export function workflowyUrl(nodeId) {
   const stripped = String(nodeId).replace(/-/g, "");
   const shortId = stripped.slice(-12);
   return `https://workflowy.com/#/${shortId}`;
+}
+
+// Plain-text share body: name, then a blank line, then the note (HTML
+// stripped). Note-less items share just the name.
+export function shareText(name, note) {
+  const plainNote = note ? stripHtml(note).trim() : "";
+  return plainNote ? `${name}\n\n${plainNote}` : name;
 }
 
 // ---- Swipe gesture ----

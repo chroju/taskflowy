@@ -10,8 +10,14 @@ import {
   getStoredApiKey,
   setStoredApiKey,
   deleteStoredApiKey,
+  getRecurRules,
+  setRecurRule,
+  deleteRecurRule,
+  getRecurCompletions,
+  addRecurCompletion,
+  removeRecurCompletion,
 } from "../api/kv-store";
-import type { PushSubscriptionRecord } from "../types";
+import type { PushSubscriptionRecord, RecurCompletion } from "../types";
 
 function makeSub(overrides: Partial<PushSubscriptionRecord> = {}): PushSubscriptionRecord {
   return {
@@ -115,6 +121,97 @@ describe("notified keys", () => {
       "1",
       expect.objectContaining({ expirationTtl: 60 * 60 * 24 * 30 })
     );
+  });
+});
+
+describe("recur rules", () => {
+  let kv: ReturnType<typeof makeKvMock>;
+  beforeEach(() => {
+    kv = makeKvMock();
+  });
+
+  it("returns an empty map when nothing is stored", async () => {
+    expect(await getRecurRules(kv as never)).toEqual({});
+  });
+
+  it("sets and replaces a rule per node id", async () => {
+    await setRecurRule(kv as never, "n1", { freq: "daily" });
+    await setRecurRule(kv as never, "n2", { freq: "weekly", weekday: 1 });
+    await setRecurRule(kv as never, "n1", { freq: "monthly", day: 5 });
+    expect(await getRecurRules(kv as never)).toEqual({
+      n1: { freq: "monthly", day: 5 },
+      n2: { freq: "weekly", weekday: 1 },
+    });
+  });
+
+  it("deletes a rule", async () => {
+    await setRecurRule(kv as never, "n1", { freq: "daily" });
+    await deleteRecurRule(kv as never, "n1");
+    expect(await getRecurRules(kv as never)).toEqual({});
+  });
+});
+
+function makeCompletion(overrides: Partial<RecurCompletion> = {}): RecurCompletion {
+  return {
+    nodeId: "n1",
+    date: "2026-08-09",
+    prevDue: { date: "2026-08-09", time: null },
+    completedAt: 1_786_000_000,
+    ...overrides,
+  };
+}
+
+describe("recur completions", () => {
+  let kv: ReturnType<typeof makeKvMock>;
+  beforeEach(() => {
+    kv = makeKvMock();
+  });
+
+  it("returns an empty list when nothing is stored", async () => {
+    expect(await getRecurCompletions(kv as never)).toEqual([]);
+  });
+
+  it("adds completions", async () => {
+    await addRecurCompletion(kv as never, makeCompletion({ nodeId: "n1" }));
+    await addRecurCompletion(kv as never, makeCompletion({ nodeId: "n2" }));
+    const records = await getRecurCompletions(kv as never);
+    expect(records.map((r) => r.nodeId)).toEqual(["n1", "n2"]);
+  });
+
+  it("replaces a record for the same node and date instead of duplicating", async () => {
+    await addRecurCompletion(kv as never, makeCompletion({ completedAt: 100 }));
+    await addRecurCompletion(kv as never, makeCompletion({ completedAt: 200 }));
+    const records = await getRecurCompletions(kv as never);
+    expect(records).toHaveLength(1);
+    expect(records[0].completedAt).toBe(200);
+  });
+
+  it("prunes records older than 90 days relative to the new record's date", async () => {
+    await addRecurCompletion(kv as never, makeCompletion({ nodeId: "old", date: "2026-05-01" }));
+    await addRecurCompletion(kv as never, makeCompletion({ nodeId: "kept", date: "2026-05-12" }));
+    await addRecurCompletion(kv as never, makeCompletion({ nodeId: "new", date: "2026-08-09" }));
+    const records = await getRecurCompletions(kv as never);
+    expect(records.map((r) => r.nodeId)).toEqual(["kept", "new"]);
+  });
+
+  it("removes the record for a node and date, returning it", async () => {
+    await addRecurCompletion(kv as never, makeCompletion({ date: "2026-08-08" }));
+    await addRecurCompletion(kv as never, makeCompletion({ date: "2026-08-09" }));
+    const removed = await removeRecurCompletion(kv as never, "n1", "2026-08-09");
+    expect(removed?.date).toBe("2026-08-09");
+    const records = await getRecurCompletions(kv as never);
+    expect(records.map((r) => r.date)).toEqual(["2026-08-08"]);
+  });
+
+  it("removes the latest record for a node when no date is given", async () => {
+    await addRecurCompletion(kv as never, makeCompletion({ date: "2026-08-08", completedAt: 100 }));
+    await addRecurCompletion(kv as never, makeCompletion({ date: "2026-08-09", completedAt: 200 }));
+    const removed = await removeRecurCompletion(kv as never, "n1");
+    expect(removed?.date).toBe("2026-08-09");
+  });
+
+  it("returns null when there is nothing to remove", async () => {
+    expect(await removeRecurCompletion(kv as never, "n1")).toBeNull();
   });
 });
 

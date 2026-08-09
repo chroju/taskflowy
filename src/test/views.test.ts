@@ -34,6 +34,8 @@ import {
   normalizeDraftNote,
   recurLabel,
   recurRuleFor,
+  addRecurTagText,
+  removeRecurTagText,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -491,5 +493,20 @@ describe("recurRuleFor", () => {
 
   it("returns null for unknown options", () => {
     expect(recurRuleFor("bogus", null, TODAY)).toBeNull();
+  });
+});
+
+describe("recur note tag (client mirror)", () => {
+  it("adds the tag on its own line, idempotently", () => {
+    expect(addRecurTagText(null)).toBe("#recurring");
+    expect(addRecurTagText("memo")).toBe("memo\n#recurring");
+    expect(addRecurTagText("memo\n#recurring")).toBe("memo\n#recurring");
+  });
+
+  it("removes only whole tag lines", () => {
+    expect(removeRecurTagText("memo\n#recurring")).toBe("memo");
+    expect(removeRecurTagText("#recurring")).toBe("");
+    expect(removeRecurTagText("#recurring-old")).toBe("#recurring-old");
+    expect(removeRecurTagText(null)).toBe("");
   });
 });

@@ -82,6 +82,8 @@ export function recurRuleFor(
   due: { date: string; time?: string | null } | null | undefined,
   todayStr?: string
 ): RecurRuleLike | null;
+export function addRecurTagText(note: string | null | undefined): string;
+export function removeRecurTagText(note: string | null | undefined): string;
 
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;

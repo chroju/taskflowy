@@ -6,7 +6,7 @@ import { encrypt, decrypt } from "./crypto";
 import { extractTasks, mergeRecurCompletions } from "./tasks";
 import { collectDailyHistory, toViewItem } from "./daily";
 import { setTimeMarkup, stripTimeMarkup, replaceNameText, parseTimeMarkup } from "./time-markup";
-import { parseRecurRule, nextOccurrence } from "./recur";
+import { parseRecurRule, nextOccurrence, addRecurTag, removeRecurTag, hasRecurTag } from "./recur";
 import { sendPush } from "./push";
 import {
   getSubscriptions,
@@ -230,17 +230,36 @@ api.get("/recur", async (c) => {
   return c.json({ rules });
 });
 
+// Setting/clearing a rule also adds/removes a #recurring line in the node's
+// note, so recurring tasks are recognizable from Workflowy itself. The tag is
+// cosmetic (KV stays the source of truth) and is written before the KV update
+// so a Workflowy failure aborts the whole request consistently; a node that
+// no longer exists just skips the tag.
 api.put("/recur/:id", async (c) => {
-  await getApiKey(c as never);
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
   const rule = parseRecurRule(await c.req.json());
   if (!rule) return c.json({ error: "invalid recurrence rule" }, 400);
-  await setRecurRule(c.env.KV, c.req.param("id"), rule);
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (node && !hasRecurTag(node.note)) {
+    await client.updateNode(nodeId, { note: addRecurTag(node.note) });
+  }
+  await setRecurRule(c.env.KV, nodeId, rule);
   return c.json({ ok: true });
 });
 
 api.delete("/recur/:id", async (c) => {
-  await getApiKey(c as never);
-  await deleteRecurRule(c.env.KV, c.req.param("id"));
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (node && hasRecurTag(node.note)) {
+    await client.updateNode(nodeId, { note: removeRecurTag(node.note) });
+  }
+  await deleteRecurRule(c.env.KV, nodeId);
   return c.json({ ok: true });
 });
 

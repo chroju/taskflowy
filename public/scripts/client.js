@@ -55,6 +55,8 @@ import {
   normalizeDraftNote,
   recurLabel,
   recurRuleFor,
+  addRecurTagText,
+  removeRecurTagText,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -1655,6 +1657,11 @@ async function applySheetRecur(option) {
     if (rule) recurRules[entity.id] = rule;
     else delete recurRules[entity.id];
     saveRecurRules();
+    // サーバーが note に付け外しした #recurring タグをローカルにも反映する。
+    // ずれたまま直後にメモを編集・保存すると、古い note で上書きされて
+    // タグが消えてしまうため。
+    entity.note = rule ? addRecurTagText(entity.note) : removeRecurTagText(entity.note) || null;
+    persistOriginCache(sheetOrigin);
     fillSheet();
     sheetRecurEditor.classList.add("hidden");
     render();
@@ -2260,7 +2267,15 @@ async function handleAddTask() {
       saveRecurRules();
     }
 
-    afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
+    // ルール設定時はサーバーが note に #recurring タグを付けるので、ローカルの
+    // 行データにも同じ note を持たせておく（直後のメモ編集で消えないように）
+    afterComposeSend(dest, {
+      id: result.item_id,
+      name,
+      note: rule ? addRecurTagText(null) : null,
+      todo: true,
+      due,
+    });
     showToast(rule ? `追加しました（繰り返し: ${recurLabel(rule)}）` : "追加しました");
     if (afterSendAction(composeContinuous) === "continue") {
       // 連続追加 ON: シートは開いたままにし、入力だけ初期化して次の1件を待つ

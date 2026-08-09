@@ -188,6 +188,12 @@ npm run test:ui    # vitest UI起動
   「繰り返し」チップ行（追加成功後に`PUT /api/recur/:item_id`。チップはシートを開くたび
   「なし」に戻る）。どちらもなし/毎日/毎週/毎月のチップで、毎週・毎月は期限の日、
   なければ今日を基準にする（`recurLabel`/`recurRuleFor`、`views.js`）。
+  ルール設定/解除時はサーバーがノードのnote末尾に`#recurring`タグを付け外しし、
+  Workflowy側からも繰り返しと分かるようにする（`addRecurTag`/`removeRecurTag`、`recur.ts`）。
+  タグは目印であってKVが正（消えても動作に影響しない）。Taskflowyのメモ欄でも隠さない
+  （隠すとメモ編集での保全ロジックが要るため。クライアントは`addRecurTagText`/
+  `removeRecurTagText`（`views.js`）でローカルのnoteを同期し、設定直後のメモ編集で
+  タグが消えないようにしている）。
   期日マークアップを進めるだけなので通知系（朝まとめ・時刻付き・overdue反復）は無改修で動く
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/
   任意日付、登録済みの場所、ノードツリー選択）。既定の送信先は表示中のビューに対応する場所

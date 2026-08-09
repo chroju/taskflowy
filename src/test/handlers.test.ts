@@ -1014,6 +1014,50 @@ describe("recur endpoints", () => {
     expect(data.rules).toEqual({ n1: { freq: "daily" } });
   });
 
+  it("PUT /api/recur/:id appends the #recurring tag to the node's note", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo" }));
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("n1", { note: "memo\n#recurring" });
+  });
+
+  it("PUT /api/recur/:id leaves an already tagged note alone", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo\n#recurring" }));
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /api/recur/:id removes the #recurring tag from the note", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo\n#recurring" }));
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    await app.fetch(makeRequest("/api/recur/n1", { method: "DELETE" }), testEnv);
+    expect(mockUpdateNode).toHaveBeenCalledWith("n1", { note: "memo" });
+  });
+
+  it("DELETE /api/recur/:id still removes the rule when the node is gone", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    mockGetNode.mockResolvedValue(null);
+    const res = await app.fetch(makeRequest("/api/recur/n1", { method: "DELETE" }), testEnv);
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+    const list = await app.fetch(makeRequest("/api/recur"), testEnv);
+    expect(((await list.json()) as { rules: object }).rules).toEqual({});
+  });
+
   it("PUT /api/recur/:id rejects an invalid rule", async () => {
     const res = await app.fetch(
       makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "weekly", weekday: 9 }) }),

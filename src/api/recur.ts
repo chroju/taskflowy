@@ -33,6 +33,39 @@ export function parseRecurRule(raw: unknown): RecurRule | null {
   return null;
 }
 
+// --- #recurring note tag ---
+//
+// A cosmetic marker appended to the node's note when a rule is set, so
+// recurring tasks are recognizable from Workflowy itself. KV stays the source
+// of truth: the tag is not parsed back, and drift (a user editing it away in
+// Workflowy) has no effect on behavior. It is deliberately NOT hidden in
+// Taskflowy's note displays -- keeping it visible means note edits carry it
+// along naturally and nothing has to preserve it.
+
+const RECUR_TAG = "#recurring";
+// The tag counts only as a line of its own (never inside #recurring-x etc.).
+const RECUR_TAG_LINE_RE = /^\s*#recurring\s*$/;
+
+export function hasRecurTag(note: string | null): boolean {
+  if (!note) return false;
+  return note.split("\n").some((line) => RECUR_TAG_LINE_RE.test(line));
+}
+
+export function addRecurTag(note: string | null): string {
+  if (hasRecurTag(note)) return note as string;
+  const base = (note ?? "").replace(/\s+$/, "");
+  return base ? `${base}\n${RECUR_TAG}` : RECUR_TAG;
+}
+
+export function removeRecurTag(note: string | null): string {
+  if (!note) return "";
+  return note
+    .split("\n")
+    .filter((line) => !RECUR_TAG_LINE_RE.test(line))
+    .join("\n")
+    .replace(/\s+$/, "");
+}
+
 function toUtc(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));

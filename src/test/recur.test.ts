@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { parseRecurRule, nextOccurrence, addDaysStr } from "../api/recur";
+import {
+  parseRecurRule,
+  nextOccurrence,
+  addDaysStr,
+  addRecurTag,
+  removeRecurTag,
+  hasRecurTag,
+} from "../api/recur";
 
 describe("parseRecurRule", () => {
   it("accepts a daily rule", () => {
@@ -76,5 +83,45 @@ describe("addDaysStr", () => {
     expect(addDaysStr("2026-08-09", 1)).toBe("2026-08-10");
     expect(addDaysStr("2026-08-01", -1)).toBe("2026-07-31");
     expect(addDaysStr("2026-08-09", -90)).toBe("2026-05-11");
+  });
+});
+
+describe("recur note tag", () => {
+  it("appends #recurring to an empty note", () => {
+    expect(addRecurTag(null)).toBe("#recurring");
+    expect(addRecurTag("")).toBe("#recurring");
+  });
+
+  it("appends #recurring on its own line after existing note text", () => {
+    expect(addRecurTag("buy milk")).toBe("buy milk\n#recurring");
+    expect(addRecurTag("line1\nline2\n")).toBe("line1\nline2\n#recurring");
+  });
+
+  it("is idempotent when the tag is already present", () => {
+    expect(addRecurTag("#recurring")).toBe("#recurring");
+    expect(addRecurTag("note\n#recurring")).toBe("note\n#recurring");
+  });
+
+  it("does not treat prefixed tags as the marker", () => {
+    expect(addRecurTag("#recurring-old")).toBe("#recurring-old\n#recurring");
+  });
+
+  it("removes the tag line and trailing whitespace", () => {
+    expect(removeRecurTag("note\n#recurring")).toBe("note");
+    expect(removeRecurTag("#recurring")).toBe("");
+    expect(removeRecurTag("a\n#recurring\nb")).toBe("a\nb");
+  });
+
+  it("returns the note unchanged when there is no tag", () => {
+    expect(removeRecurTag("just a note")).toBe("just a note");
+    expect(removeRecurTag(null)).toBe("");
+    expect(removeRecurTag("#recurring-old")).toBe("#recurring-old");
+  });
+
+  it("hasRecurTag matches only a tag line of its own", () => {
+    expect(hasRecurTag("note\n#recurring")).toBe(true);
+    expect(hasRecurTag("#recurring")).toBe(true);
+    expect(hasRecurTag("#recurring-old")).toBe(false);
+    expect(hasRecurTag(null)).toBe(false);
   });
 });

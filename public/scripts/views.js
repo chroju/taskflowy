@@ -259,6 +259,27 @@ export function recurRuleFor(option, due, todayStr = localDateString()) {
   }
 }
 
+// #recurring タグ（note末尾の目印）のクライアント側ミラー。サーバーがルール
+// 設定/解除時に付け外しするのと同じ規則で、開いているシートのローカルな note を
+// ずらさないために使う（ずれたまま直後にメモを編集・保存するとタグが消えるため）。
+const RECUR_TAG_LINE_RE = /^\s*#recurring\s*$/;
+
+export function addRecurTagText(note) {
+  const text = note ?? "";
+  if (text.split("\n").some((line) => RECUR_TAG_LINE_RE.test(line))) return text;
+  const base = text.replace(/\s+$/, "");
+  return base ? `${base}\n#recurring` : "#recurring";
+}
+
+export function removeRecurTagText(note) {
+  if (!note) return "";
+  return note
+    .split("\n")
+    .filter((line) => !RECUR_TAG_LINE_RE.test(line))
+    .join("\n")
+    .replace(/\s+$/, "");
+}
+
 // ---- Compose ----
 
 // Compose destination:

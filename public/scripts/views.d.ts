@@ -71,6 +71,20 @@ export function visibleDailyGroups<G extends DailyGroupLike>(groups: G[], showCo
 
 export function layoutActionLabel(todo: boolean): string;
 
+export type RecurRuleLike =
+  | { freq: "daily" }
+  | { freq: "weekly"; weekday: number }
+  | { freq: "monthly"; day: number };
+
+export function recurLabel(rule: RecurRuleLike | null | undefined): string;
+export function recurRuleFor(
+  option: string,
+  due: { date: string; time?: string | null } | null | undefined,
+  todayStr?: string
+): RecurRuleLike | null;
+export function addRecurTagText(note: string | null | undefined): string;
+export function removeRecurTagText(note: string | null | undefined): string;
+
 export function splitNoteDraft(text: string | null | undefined): { name: string; note: string | null } | null;
 export function composeDestForView(view: string, places: Place[]): ComposeDest;
 export function normalizePosition(value: unknown): "top" | "bottom";

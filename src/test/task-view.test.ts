@@ -540,6 +540,12 @@ describe("resolveSwipeAction", () => {
   it("still honours a custom threshold", () => {
     expect(resolveSwipeAction(50, { threshold: 40 })).toBe("complete");
   });
+
+  // 繰り返しの仮想完了行は実ノードを消してしまうため、左スワイプ削除を持たない
+  it("never deletes when the row is complete-only", () => {
+    expect(resolveSwipeAction(-73, { completeOnly: true })).toBeNull();
+    expect(resolveSwipeAction(73, { completeOnly: true })).toBe("complete");
+  });
 });
 
 describe("clampDx", () => {
@@ -554,6 +560,12 @@ describe("clampDx", () => {
     expect(clampDx(200, { deleteOnly: true })).toBe(0);
     expect(clampDx(42, { deleteOnly: true })).toBe(0);
     expect(clampDx(-200, { deleteOnly: true })).toBe(-130);
+  });
+
+  it("blocks leftward travel when the row is complete-only", () => {
+    expect(clampDx(-200, { completeOnly: true })).toBe(0);
+    expect(clampDx(-42, { completeOnly: true })).toBe(0);
+    expect(clampDx(200, { completeOnly: true })).toBe(130);
   });
 });
 

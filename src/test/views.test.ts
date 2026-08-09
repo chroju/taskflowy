@@ -32,6 +32,10 @@ import {
   layoutActionLabel,
   parseSharePayload,
   normalizeDraftNote,
+  recurLabel,
+  recurRuleFor,
+  addRecurTagText,
+  removeRecurTagText,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -452,5 +456,57 @@ describe("normalizeDraftNote", () => {
     expect(normalizeDraftNote({ type: "click" })).toBeNull();
     expect(normalizeDraftNote(undefined)).toBeNull();
     expect(normalizeDraftNote(null)).toBeNull();
+  });
+});
+
+describe("recurLabel", () => {
+  it("names each rule", () => {
+    expect(recurLabel(null)).toBe("なし");
+    expect(recurLabel(undefined)).toBe("なし");
+    expect(recurLabel({ freq: "daily" })).toBe("毎日");
+    expect(recurLabel({ freq: "weekly", weekday: 1 })).toBe("毎週月");
+    expect(recurLabel({ freq: "weekly", weekday: 0 })).toBe("毎週日");
+    expect(recurLabel({ freq: "monthly", day: 15 })).toBe("毎月15日");
+  });
+});
+
+describe("recurRuleFor", () => {
+  // TODAY (2026-08-08) is a Saturday
+  it("builds rules from the chip options", () => {
+    expect(recurRuleFor("none", null, TODAY)).toBeNull();
+    expect(recurRuleFor("daily", null, TODAY)).toEqual({ freq: "daily" });
+    expect(recurRuleFor("weekly", null, TODAY)).toEqual({ freq: "weekly", weekday: 6 });
+    expect(recurRuleFor("monthly", null, TODAY)).toEqual({ freq: "monthly", day: 8 });
+  });
+
+  it("anchors weekly/monthly to the due date when there is one", () => {
+    // 2026-08-10 is a Monday
+    expect(recurRuleFor("weekly", { date: "2026-08-10", time: null }, TODAY)).toEqual({
+      freq: "weekly",
+      weekday: 1,
+    });
+    expect(recurRuleFor("monthly", { date: "2026-08-10", time: null }, TODAY)).toEqual({
+      freq: "monthly",
+      day: 10,
+    });
+  });
+
+  it("returns null for unknown options", () => {
+    expect(recurRuleFor("bogus", null, TODAY)).toBeNull();
+  });
+});
+
+describe("recur note tag (client mirror)", () => {
+  it("adds the tag on its own line, idempotently", () => {
+    expect(addRecurTagText(null)).toBe("#recurring");
+    expect(addRecurTagText("memo")).toBe("memo\n#recurring");
+    expect(addRecurTagText("memo\n#recurring")).toBe("memo\n#recurring");
+  });
+
+  it("removes only whole tag lines", () => {
+    expect(removeRecurTagText("memo\n#recurring")).toBe("memo");
+    expect(removeRecurTagText("#recurring")).toBe("");
+    expect(removeRecurTagText("#recurring-old")).toBe("#recurring-old");
+    expect(removeRecurTagText(null)).toBe("");
   });
 });

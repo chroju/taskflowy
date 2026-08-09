@@ -995,3 +995,212 @@ describe("PUT /api/notification-settings", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("recur endpoints", () => {
+  beforeEach(() => {
+    mockGetNode.mockReset();
+    mockUpdateNode.mockReset();
+    mockUpdateNode.mockResolvedValue(undefined);
+  });
+
+  it("GET /api/recur returns stored rules", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    const res = await app.fetch(makeRequest("/api/recur"), testEnv);
+    const data = (await res.json()) as { rules: Record<string, unknown> };
+    expect(res.status).toBe(200);
+    expect(data.rules).toEqual({ n1: { freq: "daily" } });
+  });
+
+  it("PUT /api/recur/:id appends the #recurring tag to the node's note", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo" }));
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).toHaveBeenCalledWith("n1", { note: "memo\n#recurring" });
+  });
+
+  it("PUT /api/recur/:id leaves an already tagged note alone", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo\n#recurring" }));
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /api/recur/:id removes the #recurring tag from the note", async () => {
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", note: "memo\n#recurring" }));
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    await app.fetch(makeRequest("/api/recur/n1", { method: "DELETE" }), testEnv);
+    expect(mockUpdateNode).toHaveBeenCalledWith("n1", { note: "memo" });
+  });
+
+  it("DELETE /api/recur/:id still removes the rule when the node is gone", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    mockGetNode.mockResolvedValue(null);
+    const res = await app.fetch(makeRequest("/api/recur/n1", { method: "DELETE" }), testEnv);
+    expect(res.status).toBe(200);
+    expect(mockUpdateNode).not.toHaveBeenCalled();
+    const list = await app.fetch(makeRequest("/api/recur"), testEnv);
+    expect(((await list.json()) as { rules: object }).rules).toEqual({});
+  });
+
+  it("PUT /api/recur/:id rejects an invalid rule", async () => {
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "weekly", weekday: 9 }) }),
+      testEnv
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("DELETE /api/recur/:id removes the rule", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    const res = await app.fetch(makeRequest("/api/recur/n1", { method: "DELETE" }), testEnv);
+    expect(res.status).toBe(200);
+    const list = await app.fetch(makeRequest("/api/recur"), testEnv);
+    expect(((await list.json()) as { rules: object }).rules).toEqual({});
+  });
+
+  it("POST /api/recur/:id/complete rolls the due date forward and records the completion", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "weekly", weekday: 1 }) }),
+      testEnv
+    );
+    mockGetNode.mockResolvedValue(
+      makeNode({
+        id: "n1",
+        name: 'Trash <time startYear="2026" startMonth="8" startDay="9" startHour="8" startMinute="0">x</time>',
+      })
+    );
+    // 2026-08-09 is a Sunday; next Monday is 08-10
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1/complete", { method: "POST", body: JSON.stringify({ localDate: "2026-08-09" }) }),
+      testEnv
+    );
+    const data = (await res.json()) as { due: { date: string; time: string | null } };
+    expect(res.status).toBe(200);
+    expect(data.due).toEqual({ date: "2026-08-10", time: "08:00" });
+    const [nodeId, fields] = mockUpdateNode.mock.calls[0];
+    expect(nodeId).toBe("n1");
+    expect(fields.name).toContain('startDay="10"');
+    expect(fields.name).toContain('startHour="8"');
+
+    const stored = JSON.parse(testKv._store.get("recur:completions") as string);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      nodeId: "n1",
+      date: "2026-08-09",
+      prevDue: { date: "2026-08-09", time: "08:00" },
+    });
+  });
+
+  it("POST /api/recur/:id/complete returns 404 without a rule", async () => {
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1/complete", { method: "POST", body: JSON.stringify({ localDate: "2026-08-09" }) }),
+      testEnv
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/recur/:id/complete rejects a bad localDate", async () => {
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1/complete", { method: "POST", body: JSON.stringify({ localDate: "tomorrow" }) }),
+      testEnv
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/recur/:id/uncomplete restores the previous due date and drops the record", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "weekly", weekday: 1 }) }),
+      testEnv
+    );
+    mockGetNode.mockResolvedValue(
+      makeNode({ id: "n1", name: 'Trash <time startYear="2026" startMonth="8" startDay="9">x</time>' })
+    );
+    await app.fetch(
+      makeRequest("/api/recur/n1/complete", { method: "POST", body: JSON.stringify({ localDate: "2026-08-09" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    mockGetNode.mockResolvedValue(
+      makeNode({ id: "n1", name: 'Trash <time startYear="2026" startMonth="8" startDay="10">x</time>' })
+    );
+
+    const res = await app.fetch(
+      makeRequest("/api/recur/n1/uncomplete", { method: "POST", body: JSON.stringify({ date: "2026-08-09" }) }),
+      testEnv
+    );
+    const data = (await res.json()) as { due: { date: string } | null };
+    expect(res.status).toBe(200);
+    expect(data.due).toEqual({ date: "2026-08-09", time: null });
+    const [, fields] = mockUpdateNode.mock.calls[0];
+    expect(fields.name).toContain('startDay="9"');
+    expect(JSON.parse(testKv._store.get("recur:completions") as string)).toEqual([]);
+  });
+
+  it("POST /api/recur/:id/uncomplete strips the markup when the task had no due date", async () => {
+    await app.fetch(
+      makeRequest("/api/recur/n1", { method: "PUT", body: JSON.stringify({ freq: "daily" }) }),
+      testEnv
+    );
+    mockGetNode.mockResolvedValue(makeNode({ id: "n1", name: "Habit" }));
+    await app.fetch(
+      makeRequest("/api/recur/n1/complete", { method: "POST", body: JSON.stringify({ localDate: "2026-08-09" }) }),
+      testEnv
+    );
+    mockUpdateNode.mockClear();
+    mockGetNode.mockResolvedValue(
+      makeNode({ id: "n1", name: 'Habit <time startYear="2026" startMonth="8" startDay="10">x</time>' })
+    );
+
+    const res = await app.fetch(makeRequest("/api/recur/n1/uncomplete", { method: "POST", body: "{}" }), testEnv);
+    const data = (await res.json()) as { due: null };
+    expect(data.due).toBeNull();
+    const [, fields] = mockUpdateNode.mock.calls[0];
+    expect(fields.name).toBe("Habit");
+  });
+
+  it("POST /api/recur/:id/uncomplete returns 404 without a record", async () => {
+    const res = await app.fetch(makeRequest("/api/recur/n1/uncomplete", { method: "POST", body: "{}" }), testEnv);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/tasks with recurrence", () => {
+  beforeEach(() => {
+    mockNodesExport.mockReset();
+  });
+
+  it("merges virtual completed tasks from completion records", async () => {
+    testKv._store.set(
+      "recur:completions",
+      JSON.stringify([
+        { nodeId: "n1", date: "2026-08-09", prevDue: { date: "2026-08-09", time: null }, completedAt: 123 },
+      ])
+    );
+    mockNodesExport.mockResolvedValue([
+      makeExportNode({ id: "n1", name: "Trash", data: { layoutMode: "todo" } }),
+    ]);
+    const res = await app.fetch(makeRequest("/api/tasks"), testEnv);
+    const data = (await res.json()) as { tasks: Array<{ id: string; virtual?: boolean; completed: boolean }> };
+    expect(data.tasks).toHaveLength(2);
+    expect(data.tasks[1]).toMatchObject({ id: "n1", virtual: true, completed: true, recurDate: "2026-08-09" });
+  });
+});

@@ -232,6 +232,54 @@ export function layoutActionLabel(todo) {
   return todo ? "メモにする" : "タスクにする";
 }
 
+// ---- Recurrence (detail sheet) ----
+
+// Label of the 繰り返し row: なし / 毎日 / 毎週月 / 毎月15日.
+export function recurLabel(rule) {
+  if (!rule) return "なし";
+  if (rule.freq === "daily") return "毎日";
+  if (rule.freq === "weekly") return `毎週${JP_WEEKDAYS[rule.weekday]}`;
+  return `毎月${rule.day}日`;
+}
+
+// Builds the rule for a 繰り返しエディタ chip. Weekly / monthly anchor to the
+// task's due date when it has one (set the due date first to pick the day),
+// falling back to today. "none" clears the rule.
+export function recurRuleFor(option, due, todayStr = localDateString()) {
+  const anchor = due ? due.date : todayStr;
+  switch (option) {
+    case "daily":
+      return { freq: "daily" };
+    case "weekly":
+      return { freq: "weekly", weekday: weekdayIndex(anchor) };
+    case "monthly":
+      return { freq: "monthly", day: Number(anchor.split("-")[2]) };
+    default:
+      return null;
+  }
+}
+
+// #recurring タグ（note末尾の目印）のクライアント側ミラー。サーバーがルール
+// 設定/解除時に付け外しするのと同じ規則で、開いているシートのローカルな note を
+// ずらさないために使う（ずれたまま直後にメモを編集・保存するとタグが消えるため）。
+const RECUR_TAG_LINE_RE = /^\s*#recurring\s*$/;
+
+export function addRecurTagText(note) {
+  const text = note ?? "";
+  if (text.split("\n").some((line) => RECUR_TAG_LINE_RE.test(line))) return text;
+  const base = text.replace(/\s+$/, "");
+  return base ? `${base}\n#recurring` : "#recurring";
+}
+
+export function removeRecurTagText(note) {
+  if (!note) return "";
+  return note
+    .split("\n")
+    .filter((line) => !RECUR_TAG_LINE_RE.test(line))
+    .join("\n")
+    .replace(/\s+$/, "");
+}
+
 // ---- Compose ----
 
 // Compose destination:

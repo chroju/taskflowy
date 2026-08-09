@@ -40,7 +40,10 @@ npm run test:ui    # vitest UI起動
 - `api/workflowy-v1.ts` - Workflowy API v1クライアント
 - `api/crypto.ts` - APIキーの暗号化/復号化
 - `api/tasks.ts` - `nodes-export`のフラットなノード配列からタスク（layoutMode=todo）を抽出。
-  デフォルトは未完了のみ、`includeCompleted`オプションで完了済みも含める（`/api/tasks`が使用）
+  デフォルトは未完了のみ、`includeCompleted`オプションで完了済みも含める（`/api/tasks`が使用）。
+  `mergeRecurCompletions`は繰り返しタスクの完了記録を仮想の完了タスクとして合流させる
+- `api/recur.ts` - 繰り返しルールの純粋ロジック。`parseRecurRule`（APIバリデーション）と
+  `nextOccurrence`（指定日より後の直近の該当日。文字列/UTC演算でTZ非依存）
 - `api/daily.ts` - Dailyビュー用。ネイティブカレンダーの日付キー（`YYYY-MM-DD`、404=その日なし）を
   遡ってプローブし、日付グループを収集する（`/api/daily`が使用）。`toViewItem`は
   Daily/登録ノードビュー共通のアイテム変換
@@ -49,7 +52,8 @@ npm run test:ui    # vitest UI起動
 - `api/jst.ts` - JST（UTC+9固定）の日付/時刻ユーティリティ。Dateのロケール依存メソッドは使わない
 - `api/notify.ts` - `selectDueNotifications`: 通知対象タスクを判定する純粋関数
 - `api/push.ts` - Web Push送信（`@block65/webcrypto-web-push`）とVAPID鍵ペア生成
-- `api/kv-store.ts` - KVアクセスの薄いラッパー（購読リスト、通知済み記録、通知設定、暗号化APIキー）
+- `api/kv-store.ts` - KVアクセスの薄いラッパー（購読リスト、通知済み記録、通知設定、暗号化APIキー、
+  繰り返しルール、繰り返し完了記録）
 - `api/cron.ts` - `runNotificationSweep`: Cronから呼ばれる通知送信フローの本体
 - `types/index.ts` - 共有型定義
 
@@ -168,6 +172,29 @@ npm run test:ui    # vitest UI起動
   「完了にする」は持たせない（`bindRowSwipe`の`deleteOnly`、`resolveSwipeAction`/`clampDx`）
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
+- **繰り返しタスク**（Issue #26）: Workflowyに繰り返し機能がないため繰り越し方式で実装。
+  完了操作はTaskflowy経由のみが前提。ルールは固定スケジュール（毎日/毎週◯曜/毎月N日）で
+  KVの`recur:rules`（ノードIDキー）に保存し、クライアントは起動時に`GET /api/recur`で取得して
+  LocalStorageにミラーする。繰り返しタスクの完了は`POST /api/recur/:id/complete`が
+  「完了記録をKVの`recur:completions`へ保存（90日で刈り込み）＋期日マークアップを次回へ差し替え」を
+  行い、Workflowy側のノードは完了させない。遅れて完了しても過ぎた回はスキップして
+  「クライアントのローカル日付より後の直近の該当日」に進む（期日の時刻は引き継ぐ）。
+  完了記録は`/api/tasks`が仮想の完了タスク（`virtual: true` + 取り消し用の`recurDate`）として
+  合流させ、Today/Deadlinesの完了グループに出る。仮想行の右スワイプ=`/uncomplete`
+  （記録の`prevDue`で期日を戻す）。仮想行は実ノードを消してしまうため左スワイプ削除と
+  シートの削除ボタンを持たない（`resolveSwipeAction`/`clampDx`の`completeOnly`）。
+  Nodesタブの集計（done/total）は完了のたびに膨らむため仮想行を除外する。
+  ルール設定の入口は2か所: 詳細シートの「繰り返し」行と、composeタスクモードの
+  「繰り返し」チップ行（追加成功後に`PUT /api/recur/:item_id`。チップはシートを開くたび
+  「なし」に戻る）。どちらもなし/毎日/毎週/毎月のチップで、毎週・毎月は期限の日、
+  なければ今日を基準にする（`recurLabel`/`recurRuleFor`、`views.js`）。
+  ルール設定/解除時はサーバーがノードのnote末尾に`#recurring`タグを付け外しし、
+  Workflowy側からも繰り返しと分かるようにする（`addRecurTag`/`removeRecurTag`、`recur.ts`）。
+  タグは目印であってKVが正（消えても動作に影響しない）。Taskflowyのメモ欄でも隠さない
+  （隠すとメモ編集での保全ロジックが要るため。クライアントは`addRecurTagText`/
+  `removeRecurTagText`（`views.js`）でローカルのnoteを同期し、設定直後のメモ編集で
+  タグが消えないようにしている）。
+  期日マークアップを進めるだけなので通知系（朝まとめ・時刻付き・overdue反復）は無改修で動く
 - **compose**: FABから開くシート。タスク/ノートの2モード+送信先セレクタ（Daily 今日/明日/来週/
   任意日付、登録済みの場所、ノードツリー選択）。既定の送信先は表示中のビューに対応する場所
   （Tasks/DailyビューはDaily 今日）。挿入位置はシート本体の軽いトグル（▼ 末尾 / ▲ 先頭。

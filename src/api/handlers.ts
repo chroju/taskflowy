@@ -3,9 +3,10 @@ import { cors } from "hono/cors";
 import { setCookie, getCookie } from "hono/cookie";
 import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
-import { extractTasks } from "./tasks";
+import { extractTasks, mergeRecurCompletions } from "./tasks";
 import { collectDailyHistory, toViewItem } from "./daily";
-import { setTimeMarkup, stripTimeMarkup, replaceNameText } from "./time-markup";
+import { setTimeMarkup, stripTimeMarkup, replaceNameText, parseTimeMarkup } from "./time-markup";
+import { parseRecurRule, nextOccurrence, addRecurTag, removeRecurTag, hasRecurTag } from "./recur";
 import { sendPush } from "./push";
 import {
   getSubscriptions,
@@ -15,6 +16,12 @@ import {
   setNotificationSettings,
   setStoredApiKey,
   deleteStoredApiKey,
+  getRecurRules,
+  setRecurRule,
+  deleteRecurRule,
+  getRecurCompletions,
+  addRecurCompletion,
+  removeRecurCompletion,
 } from "./kv-store";
 import type { Env, PushSubscriptionRecord } from "../types";
 
@@ -203,9 +210,111 @@ api.get("/tasks", async (c) => {
   }
 
   // Completed todos are included so the client can show per-node progress
-  // (done/total) and the completed group in the single-node view.
+  // (done/total) and the completed group in the single-node view. Recurring
+  // completions (KV records; the nodes themselves stay uncompleted) are
+  // merged in as virtual completed tasks.
   const tasks = extractTasks(nodes, { includeCompleted: true });
-  return c.json({ tasks });
+  const completions = await getRecurCompletions(c.env.KV);
+  return c.json({ tasks: mergeRecurCompletions(tasks, completions) });
+});
+
+// --- Recurrence (Issue #26) ---
+//
+// Rules are fixed-schedule and live in KV keyed by node id. Completing a
+// recurring task never completes the Workflowy node: the due date rolls
+// forward to the next occurrence and the completion is recorded in KV.
+
+api.get("/recur", async (c) => {
+  await getApiKey(c as never); // auth gate only
+  const rules = await getRecurRules(c.env.KV);
+  return c.json({ rules });
+});
+
+// Setting/clearing a rule also adds/removes a #recurring line in the node's
+// note, so recurring tasks are recognizable from Workflowy itself. The tag is
+// cosmetic (KV stays the source of truth) and is written before the KV update
+// so a Workflowy failure aborts the whole request consistently; a node that
+// no longer exists just skips the tag.
+api.put("/recur/:id", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const rule = parseRecurRule(await c.req.json());
+  if (!rule) return c.json({ error: "invalid recurrence rule" }, 400);
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (node && !hasRecurTag(node.note)) {
+    await client.updateNode(nodeId, { note: addRecurTag(node.note) });
+  }
+  await setRecurRule(c.env.KV, nodeId, rule);
+  return c.json({ ok: true });
+});
+
+api.delete("/recur/:id", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (node && hasRecurTag(node.note)) {
+    await client.updateNode(nodeId, { note: removeRecurTag(node.note) });
+  }
+  await deleteRecurRule(c.env.KV, nodeId);
+  return c.json({ ok: true });
+});
+
+// Complete a recurring task: record the completion (keeping the due date it
+// was completed against) and roll the node's due date to the next occurrence
+// after the client's local date -- missed occurrences are skipped. A time of
+// day on the due date is carried over to the new one.
+api.post("/recur/:id/complete", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const body = await c.req.json<{ localDate?: string }>();
+  if (!body.localDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.localDate)) {
+    return c.json({ error: "localDate (YYYY-MM-DD) required" }, 400);
+  }
+
+  const rules = await getRecurRules(c.env.KV);
+  const rule = rules[nodeId];
+  if (!rule) return c.json({ error: "no recurrence rule for this node" }, 404);
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (!node) return c.json({ error: "node not found" }, 404);
+
+  const prevDue = parseTimeMarkup(node.name);
+  const nextDate = nextOccurrence(rule, body.localDate);
+  const time = prevDue?.time ?? undefined;
+  await client.updateNode(nodeId, { name: setTimeMarkup(node.name, nextDate, time) });
+  await addRecurCompletion(c.env.KV, {
+    nodeId,
+    date: body.localDate,
+    prevDue,
+    completedAt: Math.floor(Date.now() / 1000),
+  });
+  return c.json({ ok: true, due: { date: nextDate, time: time ?? null } });
+});
+
+// Undo a recurring completion: restore the due date the record rolled forward
+// from (or clear it if there was none) and drop the record.
+api.post("/recur/:id/uncomplete", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const nodeId = c.req.param("id");
+  const body = await c.req.json<{ date?: string }>();
+
+  const record = await removeRecurCompletion(c.env.KV, nodeId, body.date);
+  if (!record) return c.json({ error: "no completion record for this node" }, 404);
+
+  const client = new WorkflowyClient(apiKey);
+  const node = await client.getNode(nodeId);
+  if (!node) return c.json({ error: "node not found" }, 404);
+
+  const name = record.prevDue
+    ? setTimeMarkup(node.name, record.prevDue.date, record.prevDue.time ?? undefined)
+    : stripTimeMarkup(node.name);
+  await client.updateNode(nodeId, { name });
+  return c.json({ ok: true, due: record.prevDue });
 });
 
 // Delete a task node (left-swipe delete in the UI).

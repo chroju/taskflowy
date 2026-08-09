@@ -50,6 +50,21 @@ export interface Task {
   completedAt: number | null; // Unix seconds; used to date the 完了 groups
   due: { date: string; time: string | null } | null;
   completed: boolean;
+  // Set on virtual completed instances of a recurring task (built from a
+  // RecurCompletion; the Workflowy node itself stays uncompleted). recurDate
+  // identifies the source record for un-completing.
+  virtual?: boolean;
+  recurDate?: string;
+}
+
+// One completion of a recurring task (KV: recur:completions). The Workflowy
+// node is never completed; this record is what the 完了 views show. prevDue
+// is kept so un-completing can restore the due date it rolled forward from.
+export interface RecurCompletion {
+  nodeId: string;
+  date: string; // local YYYY-MM-DD the completion happened on
+  prevDue: { date: string; time: string | null } | null;
+  completedAt: number; // Unix seconds
 }
 
 // Item shown in the Daily / registered-node views. Tasks (layoutMode "todo")

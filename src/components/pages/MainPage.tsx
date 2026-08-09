@@ -227,6 +227,14 @@ export const MainPage: FC = () => (
               <input id="task-date-input" type="date" class="sheet-input-small" />
               <input id="task-time-input" type="time" class="sheet-input-small" />
             </div>
+            {/* 繰り返し: 毎週・毎月は期限の日（期限がなければ今日）を基準にする */}
+            <div class="sheet-chip-row">
+              <span class="compose-due-label">繰り返し</span>
+              <button class="chip compose-recur-chip" data-recur="none">なし</button>
+              <button class="chip compose-recur-chip" data-recur="daily">毎日</button>
+              <button class="chip compose-recur-chip" data-recur="weekly">毎週</button>
+              <button class="chip compose-recur-chip" data-recur="monthly">毎月</button>
+            </div>
             <div class="compose-footer">
               <span class="compose-footer-note">書き込み先の日付と、タスクの期限は別ものです。</span>
               <button id="btn-continuous-task" class="chip compose-continuous">連続</button>

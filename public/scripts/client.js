@@ -77,6 +77,7 @@ let sheetOrigin = "tasks"; // どのビューの行か: 'tasks' | 'daily' | <pla
 let sheetIsMemo = false; // メモ用の読み物レイアウトで表示中か
 let sheetDate = null; // Daily の日付ノードを開いているときの日付キー
 let addDue = "today"; // selected chip in the add sheet
+let addRecur = "none"; // compose の繰り返しチップ。シートを開くたび「なし」に戻る
 let pendingDelete = null; // { run } awaiting delete confirmation
 // 繰り返しルール: nodeId -> rule。サーバー（KV）が正で、起動時に取得して
 // LocalStorage にミラーする（オフライン起動でも表示が組めるように）
@@ -2014,7 +2015,9 @@ function resetComposeInputs() {
   taskDateInput.value = "";
   taskTimeInput.value = "";
   addDue = "today";
+  addRecur = "none";
   renderDueChips();
+  renderComposeRecurChips();
 }
 
 // draftNote: 他アプリからの共有（Web Share Target）で事前入力するノート本文。
@@ -2064,6 +2067,12 @@ function renderDueChips() {
   const custom = !!(taskDateInput.value || taskTimeInput.value);
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {
     chip.classList.toggle("active", !custom && chip.dataset.due === addDue);
+  });
+}
+
+function renderComposeRecurChips() {
+  sheetAddEl.querySelectorAll(".compose-recur-chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.recur === addRecur);
   });
 }
 
@@ -2240,8 +2249,19 @@ async function handleAddTask() {
       });
     }
 
+    // 繰り返しチップ: 追加したノードにルールを付ける（毎週・毎月の基準は期限の日）
+    const rule = result.item_id ? recurRuleFor(addRecur, due) : null;
+    if (rule) {
+      await apiRequest(`/recur/${encodeURIComponent(result.item_id)}`, {
+        method: "PUT",
+        body: JSON.stringify(rule),
+      });
+      recurRules[result.item_id] = rule;
+      saveRecurRules();
+    }
+
     afterComposeSend(dest, { id: result.item_id, name, note: null, todo: true, due });
-    showToast("追加しました");
+    showToast(rule ? `追加しました（繰り返し: ${recurLabel(rule)}）` : "追加しました");
     if (afterSendAction(composeContinuous) === "continue") {
       // 連続追加 ON: シートは開いたままにし、入力だけ初期化して次の1件を待つ
       resetComposeInputs();
@@ -2320,6 +2340,13 @@ function bindEvents() {
 
   document.querySelectorAll("[data-close-sheet]").forEach((el) => {
     el.addEventListener("click", closeViaBack);
+  });
+
+  sheetAddEl.querySelectorAll(".compose-recur-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      addRecur = chip.dataset.recur;
+      renderComposeRecurChips();
+    });
   });
 
   sheetAddEl.querySelectorAll(".due-chip").forEach((chip) => {

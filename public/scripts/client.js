@@ -17,6 +17,7 @@ import {
   groupNodeTasks,
   donutDash,
   workflowyUrl,
+  shareText,
   swipeDirection,
   resolveSwipeAction,
   clampDx,
@@ -50,6 +51,7 @@ import {
   toggleInView,
   movePlace,
   reorderPlaces,
+  parseSharePayload,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -115,6 +117,10 @@ const sheetTaskDue = $("sheet-task-due");
 const sheetTaskNode = $("sheet-task-node");
 const sheetTaskNote = $("sheet-task-note");
 const sheetTaskLink = $("sheet-task-link");
+const btnSheetShare = $("btn-sheet-share");
+const sheetShareEl = $("sheet-share");
+const btnShareUrl = $("btn-share-url");
+const btnShareText = $("btn-share-text");
 const btnSnoozeTomorrow = $("btn-snooze-tomorrow");
 const btnSheetComplete = $("btn-sheet-complete");
 const sheetDueEditor = $("sheet-due-editor");
@@ -204,6 +210,17 @@ async function init() {
   }
   render();
   loadCurrentView();
+  openSharedComposeIfAny();
+}
+
+// Web Share Target からの起動（?share-target&title=&text=&url=）を検知し、
+// compose シートをノート事前入力で開く。URL は履歴に残さない（リロードで再発火しないよう置き換える）。
+function openSharedComposeIfAny() {
+  if (!isAuthenticated) return;
+  const draft = parseSharePayload(window.location.search);
+  if (!draft) return;
+  history.replaceState(history.state, "", window.location.pathname);
+  openAddSheet(draft);
 }
 
 // Fetches the data behind the active view (stale-while-revalidate each).
@@ -1287,6 +1304,8 @@ function fillSheet() {
   btnSnoozeTomorrow.classList.toggle("hidden", sheetIsMemo || !!sheetDate);
   btnSheetComplete.classList.toggle("hidden", !!sheetDate);
   btnSheetLayout.classList.toggle("hidden", !!sheetDate);
+  // 日付ノードの id は日付キーで workflowyUrl の対象外なので共有ボタンごと隠す
+  btnSheetShare.classList.toggle("hidden", !!sheetDate);
   btnSheetLayout.textContent = layoutActionLabel(!sheetIsMemo);
   sheetActions.classList.toggle("only-delete", !!sheetDate);
 
@@ -1519,6 +1538,49 @@ async function toggleSheetLayout() {
   }
 }
 
+// ==================== 共有 ====================
+
+function openShareSheet() {
+  if (!sheetTask || sheetDate) return;
+  sheetShareEl.classList.remove("hidden");
+  armHistory();
+}
+
+// navigator.share 非対応（主に非セキュアコンテキストやデスクトップ Safari 系）
+// ではクリップボードへコピーする。
+async function shareContent(payload) {
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+    } catch (e) {
+      if (e.name !== "AbortError") showToast("共有できませんでした", true);
+      return;
+    }
+  } else {
+    try {
+      await navigator.clipboard.writeText(payload.url || payload.text);
+      showToast("クリップボードにコピーしました");
+    } catch {
+      showToast("コピーできませんでした", true);
+      return;
+    }
+  }
+  closeViaBack();
+}
+
+async function shareSheetTaskAsUrl() {
+  if (!sheetTask) return;
+  const entity = sheetTask;
+  await shareContent({ title: normalizeTitle(entity.plainName) || "（無題）", url: workflowyUrl(entity.id) });
+}
+
+async function shareSheetTaskAsText() {
+  if (!sheetTask) return;
+  const entity = sheetTask;
+  const title = normalizeTitle(entity.plainName) || "（無題）";
+  await shareContent({ title, text: shareText(title, entity.note) });
+}
+
 // ==================== 戻るボタン統合 ====================
 //
 // シート/設定/ドリルダウンを開くとき番兵の履歴エントリを 1 つ積み、
@@ -1531,6 +1593,7 @@ let historyArmed = false;
 function uiLayerFlags() {
   const composeOpen = !sheetAddEl.classList.contains("hidden");
   return {
+    shareOpen: !sheetShareEl.classList.contains("hidden"),
     deleteOpen: !sheetDeleteEl.classList.contains("hidden"),
     pickerOpen: composeOpen && !composePicker.classList.contains("hidden"),
     detailOpen: !sheetTaskEl.classList.contains("hidden"),
@@ -1548,7 +1611,9 @@ function armHistory() {
 
 function closeTopLayer() {
   const layer = topUiLayer(uiLayerFlags());
-  if (layer === "delete") {
+  if (layer === "share") {
+    sheetShareEl.classList.add("hidden");
+  } else if (layer === "delete") {
     sheetDeleteEl.classList.add("hidden");
     pendingDelete = null;
   } else if (layer === "picker") {
@@ -1639,8 +1704,10 @@ function resetComposeInputs() {
   renderDueChips();
 }
 
-function openAddSheet() {
-  composeMode = initialComposeMode(settings.composeMode); // 前回使ったモードで開く
+// draftNote: 他アプリからの共有（Web Share Target）で事前入力するノート本文。
+// 共有内容はタイトル/URLが分かれておらず自由記述に近いため、常にノートモードで開く。
+function openAddSheet(draftNote) {
+  composeMode = draftNote ? "note" : initialComposeMode(settings.composeMode); // 前回使ったモードで開く
   composeContinuous = false; // 連続追加は毎回 OFF から
   // 既定の書き込み先は表示中のビューに対応する場所（Tasks ビューは Daily 今日）
   composeDest = composeDestForView(view, settings.places);
@@ -1649,6 +1716,7 @@ function openAddSheet() {
   composeMain.classList.remove("hidden");
   renderCompose();
   resetComposeInputs();
+  if (draftNote) noteInput.value = draftNote;
   sheetAddEl.classList.remove("hidden");
   armHistory();
   (composeMode === "task" ? taskNameInput : noteInput).focus();
@@ -2018,6 +2086,9 @@ function bindEvents() {
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
   btnSheetLayout.addEventListener("click", toggleSheetLayout);
+  btnSheetShare.addEventListener("click", openShareSheet);
+  btnShareUrl.addEventListener("click", shareSheetTaskAsUrl);
+  btnShareText.addEventListener("click", shareSheetTaskAsText);
 
   // タイトル・メモはクリックでその場編集。メモ面はタスク（定義リストの「メモ」行）と
   // メモ（note の読み物面）で要素が分かれるので、同じ保存処理を両方に結ぶ。

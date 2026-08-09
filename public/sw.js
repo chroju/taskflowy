@@ -1,4 +1,4 @@
-const CACHE_VERSION = "0.1.1";
+const CACHE_VERSION = "0.1.2";
 const CACHE_NAME = `taskflowy-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   "/",

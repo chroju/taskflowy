@@ -100,6 +100,13 @@ export const MainPage: FC = () => (
               <path d="M15.41 6.51l-6.82 3.98"></path>
             </svg>
           </button>
+          <button id="btn-sheet-register-place" class="sheet-action" title="この場所を登録">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21 12 16 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+              <line x1="9" y1="7" x2="15" y2="7"></line>
+              <line x1="12" y1="4" x2="12" y2="10"></line>
+            </svg>
+          </button>
           <button id="btn-sheet-layout" class="sheet-action">メモにする</button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>

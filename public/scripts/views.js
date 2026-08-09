@@ -60,6 +60,12 @@ export function toggleInView(places, id) {
   return places.map((p) => (p.id === id ? { ...p, inView: !p.inView } : p));
 }
 
+// The view bar's edit mode badge: registered nodes offer deletion, builtin
+// places (Tasks / Daily) only hiding.
+export function editBadgeAction(place) {
+  return place.kind === "node" ? "delete" : "hide";
+}
+
 // Moves a place up (delta -1) or down (+1) in the settings list. Returns the
 // reordered array, or the original when the move falls off either end.
 export function movePlace(places, id, delta) {

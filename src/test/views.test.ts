@@ -6,6 +6,7 @@ import {
   toggleInView,
   movePlace,
   reorderPlaces,
+  editBadgeAction,
   ensureVisibleView,
   stepView,
   resolveBarStep,
@@ -97,6 +98,19 @@ describe("toggleInView", () => {
       inView: p.id === "tasks",
     }));
     expect(toggleInView(places, "tasks")).toBeNull();
+  });
+});
+
+describe("editBadgeAction", () => {
+  it("is delete for a registered node place", () => {
+    const place = placesFixture().find((p) => p.id === "p1")!;
+    expect(editBadgeAction(place)).toBe("delete");
+  });
+
+  it("is hide for builtin places", () => {
+    for (const place of placesFixture().filter((p) => p.kind !== "node")) {
+      expect(editBadgeAction(place)).toBe("hide");
+    }
   });
 });
 

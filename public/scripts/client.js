@@ -432,12 +432,13 @@ function renderTasksView() {
 let barSuppressClick = false;
 let viewbarEditing = false;
 
-const ICON_BADGE_CLOSE = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
+const ICON_CLOSE = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
+const ICON_PENCIL = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
 
 function renderViewBar() {
   viewbarTrack.innerHTML = "";
   viewbar.classList.toggle("editing", viewbarEditing);
-  btnViewbarEdit.textContent = viewbarEditing ? "完了" : "編集";
+  btnViewbarEdit.innerHTML = viewbarEditing ? "完了" : ICON_PENCIL;
   btnViewbarEdit.classList.toggle("active", viewbarEditing);
   for (const place of visiblePlaces(settings.places)) {
     const pill = document.createElement("button");
@@ -453,14 +454,13 @@ function renderViewBar() {
       switchView(place.id);
     });
     if (viewbarEditing) {
-      const badge = document.createElement("span");
-      badge.className = "view-pill-badge";
-      badge.innerHTML = ICON_BADGE_CLOSE;
-      badge.addEventListener("click", (e) => {
+      const dot = pill.querySelector(".view-dot");
+      dot.classList.add("view-dot-close");
+      dot.innerHTML = ICON_CLOSE;
+      dot.addEventListener("click", (e) => {
         e.stopPropagation();
         runViewbarEditBadge(place);
       });
-      pill.appendChild(badge);
     }
     viewbarTrack.appendChild(pill);
   }

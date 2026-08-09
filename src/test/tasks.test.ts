@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { extractTasks } from "../api/tasks";
-import type { ExportNode } from "../types";
+import { extractTasks, mergeRecurCompletions } from "../api/tasks";
+import type { ExportNode, Task, RecurCompletion } from "../types";
 
 function makeNode(overrides: Partial<ExportNode> = {}): ExportNode {
   return {
@@ -158,5 +158,66 @@ describe("extractTasks", () => {
     expect(tasks.find((t) => t.id === "a")?.completed).toBe(true);
     expect(tasks.find((t) => t.id === "b")?.completed).toBe(true);
     expect(tasks.find((t) => t.id === "c")?.completed).toBe(false);
+  });
+});
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "n1",
+    name: "Task",
+    plainName: "Task",
+    note: null,
+    parentId: "p1",
+    parentPath: ["Parent"],
+    createdAt: 0,
+    completedAt: null,
+    due: { date: "2026-08-16", time: null },
+    completed: false,
+    ...overrides,
+  };
+}
+
+function makeCompletion(overrides: Partial<RecurCompletion> = {}): RecurCompletion {
+  return {
+    nodeId: "n1",
+    date: "2026-08-09",
+    prevDue: { date: "2026-08-09", time: null },
+    completedAt: 1_786_000_000,
+    ...overrides,
+  };
+}
+
+describe("mergeRecurCompletions", () => {
+  it("appends a virtual completed task built from the live task", () => {
+    const tasks = [makeTask()];
+    const merged = mergeRecurCompletions(tasks, [makeCompletion()]);
+    expect(merged).toHaveLength(2);
+    const virtual = merged[1];
+    expect(virtual.virtual).toBe(true);
+    expect(virtual.recurDate).toBe("2026-08-09");
+    expect(virtual.completed).toBe(true);
+    expect(virtual.completedAt).toBe(1_786_000_000);
+    // Shows the due date it was completed against, not the rolled-forward one
+    expect(virtual.due).toEqual({ date: "2026-08-09", time: null });
+    expect(virtual.plainName).toBe("Task");
+    expect(virtual.parentPath).toEqual(["Parent"]);
+  });
+
+  it("leaves the live task untouched", () => {
+    const tasks = [makeTask()];
+    const merged = mergeRecurCompletions(tasks, [makeCompletion()]);
+    expect(merged[0].completed).toBe(false);
+    expect(merged[0].virtual).toBeUndefined();
+    expect(merged[0].due).toEqual({ date: "2026-08-16", time: null });
+  });
+
+  it("skips records whose node is no longer a task", () => {
+    const merged = mergeRecurCompletions([makeTask({ id: "other" })], [makeCompletion()]);
+    expect(merged).toHaveLength(1);
+  });
+
+  it("returns the input unchanged when there are no records", () => {
+    const tasks = [makeTask()];
+    expect(mergeRecurCompletions(tasks, [])).toEqual(tasks);
   });
 });

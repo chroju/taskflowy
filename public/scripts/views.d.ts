@@ -27,10 +27,8 @@ export function migratePlaces(settings: Record<string, unknown>): {
 };
 export function visiblePlaces(places: Place[]): Place[];
 export function toggleInView(places: Place[], id: string): Place[] | null;
-export function editBadgeAction(place: Place): "delete" | "hide";
 export function movePlace(places: Place[], id: string, delta: number): Place[];
 export function reorderPlaces(places: Place[], orderedIds: string[]): Place[];
-export function reorderVisiblePlaces(places: Place[], visibleOrderedIds: string[]): Place[];
 
 export function ensureVisibleView(places: Place[], view: string | null): string | null;
 export function stepView(places: Place[], view: string, dir: number): string;
@@ -49,13 +47,14 @@ export interface UiLayerFlags {
   detailOpen: boolean;
   subtreeOpen: boolean;
   composeOpen: boolean;
+  placesOpen: boolean;
   settingsOpen: boolean;
   drilldown: boolean;
 }
 
 export function topUiLayer(
   flags: UiLayerFlags
-): "share" | "delete" | "picker" | "detail" | "subtree" | "compose" | "settings" | "drilldown" | null;
+): "share" | "delete" | "picker" | "detail" | "subtree" | "compose" | "places" | "settings" | "drilldown" | null;
 
 export type ShowCompletedState = Record<string, boolean> | boolean | undefined | null;
 export function showCompletedFor(state: ShowCompletedState, scope: string): boolean;

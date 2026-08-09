@@ -514,26 +514,15 @@ button {
   scrollbar-width: none;
 }
 
-/* 編集モード中はピルの横ドラッグ並べ替えを自前で扱うため、トラック自身の
-   横スクロールジェスチャーと競合しないよう無効化する */
-.viewbar-track.reordering,
-.viewbar.editing .viewbar-track {
-  touch-action: none;
-}
-
 .viewbar-track::-webkit-scrollbar {
   display: none;
 }
 
-/* 行末スペーサー: 最後のピルが FAB の下に潜らないように */
+/* 行末スペーサー: 最後のピルが FAB の下に潜らないように、また編集ボタンの
+   下にも潜らないように */
 .viewbar-track::after {
   content: "";
   flex: none;
-  width: 62px;
-}
-
-/* 編集モード中は末尾の編集ボタンの下に潜らないようスペーサーを広げる */
-.viewbar.editing .viewbar-track::after {
   width: 66px;
 }
 
@@ -575,30 +564,7 @@ button {
   background: var(--accent);
 }
 
-/* 編集モード中、view-dot が閉じるボタン（✕）に差し替わる。文字と同じ高さで
-   ピルの外にははみ出さない */
-.view-dot-close {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--maroon);
-  color: #1a1a1a;
-}
-
-/* 編集モード中のピル並べ替え（横ドラッグ） */
-.view-pill.dragging {
-  background: var(--accent-dim);
-  color: var(--accent-soft);
-}
-
-.viewbar-track.reordering .view-pill:not(.dragging) {
-  opacity: 0.7;
-}
-
-/* ビューバー右端の編集トグル（鉛筆アイコン） */
+/* ビューバー右端の編集トグル（鉛筆アイコン。「ビューを編集」シートを開く） */
 .viewbar-edit {
   position: absolute;
   right: 12px;

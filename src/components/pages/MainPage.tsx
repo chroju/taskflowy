@@ -114,6 +114,19 @@ export const MainPage: FC = () => (
       </div>
     </div>
 
+    {/* 場所の管理シート（ビューバーの編集ボタンで開く）。並べ替え・表示切替・削除。
+        削除確認シートより手前に出す必要があるため sheet-delete より前に置く
+        （シートの重なりは DOM 順に依存する） */}
+    <div id="sheet-places" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-places"></div>
+      <div class="sheet-panel">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-title">ビューを編集</div>
+        <p class="card-desc">並べ替え・表示のON/OFF・削除ができます。組み込みのビューは削除できません。</p>
+        <div id="places-sheet-list" class="place-list"></div>
+      </div>
+    </div>
+
     {/* 共有形式ピッカー（共有ボタンタップで開く） */}
     <div id="sheet-share" class="sheet hidden">
       <div class="sheet-backdrop" data-close-sheet="sheet-share"></div>
@@ -281,8 +294,14 @@ export const MainPage: FC = () => (
             <div class="card-title">場所</div>
             <span id="place-count" class="place-count"></span>
           </div>
-          <p class="card-desc">書き込み先とビューの並び順を管理します。眼のアイコンでビューへの表示を切り替えます。</p>
-          <div id="place-list" class="place-list"></div>
+          <p class="card-desc">
+            書き込み先とビューを管理します。並べ替え・表示切り替え・削除はビューバーの
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+              <path d="m15 5 4 4"></path>
+            </svg>
+            から。
+          </p>
           <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
 
           <div id="panel-add-destination" class="dest-panel hidden">

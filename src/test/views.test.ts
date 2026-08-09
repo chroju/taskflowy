@@ -6,8 +6,6 @@ import {
   toggleInView,
   movePlace,
   reorderPlaces,
-  reorderVisiblePlaces,
-  editBadgeAction,
   ensureVisibleView,
   stepView,
   resolveBarStep,
@@ -102,19 +100,6 @@ describe("toggleInView", () => {
   });
 });
 
-describe("editBadgeAction", () => {
-  it("is delete for a registered node place", () => {
-    const place = placesFixture().find((p) => p.id === "p1")!;
-    expect(editBadgeAction(place)).toBe("delete");
-  });
-
-  it("is hide for builtin places", () => {
-    for (const place of placesFixture().filter((p) => p.kind !== "node")) {
-      expect(editBadgeAction(place)).toBe("hide");
-    }
-  });
-});
-
 describe("movePlace / reorderPlaces", () => {
   it("moves a place by one step and clamps at the ends", () => {
     const places = placesFixture();
@@ -132,26 +117,6 @@ describe("movePlace / reorderPlaces", () => {
     const places = placesFixture();
     const next = reorderPlaces(places, ["p1", "tasks"]);
     expect(next.map((p: { id: string }) => p.id)).toEqual(["p1", "tasks", "daily", "p2"]);
-  });
-});
-
-describe("reorderVisiblePlaces", () => {
-  it("reorders only the visible places, keeping hidden ones at their original index", () => {
-    // p2 (hidden) sits between daily and p1 in the underlying list.
-    const places: Place[] = [
-      { id: "tasks", kind: "builtin", name: "Tasks", inView: true },
-      { id: "daily", kind: "daily", name: "Daily", inView: true },
-      { id: "p2", kind: "node", name: "Inbox", ref: "node-2", inView: false },
-      { id: "p1", kind: "node", name: "記事クリップ", ref: "node-1", inView: true },
-    ];
-    // Drag the view bar (tasks/daily/p1 only) to p1, daily, tasks.
-    const next = reorderVisiblePlaces(places, ["p1", "daily", "tasks"]);
-    expect(next.map((p: { id: string }) => p.id)).toEqual(["p1", "daily", "p2", "tasks"]);
-  });
-
-  it("is a no-op when the visible order list is empty or unmatched", () => {
-    const places = placesFixture();
-    expect(reorderVisiblePlaces(places, [])).toEqual(places);
   });
 });
 
@@ -223,6 +188,7 @@ describe("topUiLayer", () => {
     pickerOpen: false,
     detailOpen: false,
     composeOpen: false,
+    placesOpen: false,
     settingsOpen: false,
     subtreeOpen: false,
     drilldown: false,
@@ -269,6 +235,15 @@ describe("topUiLayer", () => {
 
   it("closes the settings screen", () => {
     expect(topUiLayer({ ...none, settingsOpen: true })).toBe("settings");
+  });
+
+  it("closes the places (view bar edit) sheet before settings", () => {
+    expect(topUiLayer({ ...none, placesOpen: true, settingsOpen: true })).toBe("places");
+    expect(topUiLayer({ ...none, placesOpen: true })).toBe("places");
+  });
+
+  it("closes an open sheet (e.g. delete confirmation) before the places sheet", () => {
+    expect(topUiLayer({ ...none, deleteOpen: true, placesOpen: true })).toBe("delete");
   });
 });
 

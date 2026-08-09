@@ -60,12 +60,6 @@ export function toggleInView(places, id) {
   return places.map((p) => (p.id === id ? { ...p, inView: !p.inView } : p));
 }
 
-// The view bar's edit mode badge: registered nodes offer deletion, builtin
-// places (Tasks / Daily) only hiding.
-export function editBadgeAction(place) {
-  return place.kind === "node" ? "delete" : "hide";
-}
-
 // Moves a place up (delta -1) or down (+1) in the settings list. Returns the
 // reordered array, or the original when the move falls off either end.
 export function movePlace(places, id, delta) {
@@ -95,17 +89,6 @@ export function reorderPlaces(places, orderedIds) {
     if (byId.has(p.id)) next.push(p);
   }
   return next;
-}
-
-// Reorders only the places named in visibleOrderedIds (the view bar's drag
-// result), leaving hidden places at their original index. Unlike
-// reorderPlaces, a hidden place between two visible ones does not get
-// shoved to the end.
-export function reorderVisiblePlaces(places, visibleOrderedIds) {
-  const visibleSet = new Set(visibleOrderedIds);
-  const byId = new Map(places.map((p) => [p.id, p]));
-  let cursor = 0;
-  return places.map((p) => (visibleSet.has(p.id) ? byId.get(visibleOrderedIds[cursor++]) : p));
 }
 
 // ---- View switching ----
@@ -192,6 +175,7 @@ export function topUiLayer({
   detailOpen,
   subtreeOpen,
   composeOpen,
+  placesOpen,
   settingsOpen,
   drilldown,
 }) {
@@ -201,6 +185,7 @@ export function topUiLayer({
   if (detailOpen) return "detail";
   if (subtreeOpen) return "subtree";
   if (composeOpen) return "compose";
+  if (placesOpen) return "places";
   if (settingsOpen) return "settings";
   if (drilldown) return "drilldown";
   return null;

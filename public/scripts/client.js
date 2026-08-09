@@ -49,10 +49,8 @@ import {
   splitNoteDraft,
   layoutActionLabel,
   toggleInView,
-  editBadgeAction,
   movePlace,
   reorderPlaces,
-  reorderVisiblePlaces,
   parseSharePayload,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
@@ -187,8 +185,9 @@ const reminderHoursEl = $("reminder-hours");
 const btnTestNotification = $("btn-test-notification");
 const syncLabel = $("sync-label");
 const btnSyncNow = $("btn-sync-now");
-const placeList = $("place-list");
+const placeList = $("places-sheet-list");
 const placeCount = $("place-count");
+const sheetPlacesEl = $("sheet-places");
 const btnAddDestination = $("btn-add-destination");
 const panelAddDest = $("panel-add-destination");
 const nodeTree = $("node-tree");
@@ -432,16 +431,12 @@ function renderTasksView() {
 // ==================== View bar ====================
 
 let barSuppressClick = false;
-let viewbarEditing = false;
 
-const ICON_CLOSE = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
 const ICON_PENCIL = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
 
 function renderViewBar() {
   viewbarTrack.innerHTML = "";
-  viewbar.classList.toggle("editing", viewbarEditing);
-  btnViewbarEdit.innerHTML = viewbarEditing ? "完了" : ICON_PENCIL;
-  btnViewbarEdit.classList.toggle("active", viewbarEditing);
+  btnViewbarEdit.innerHTML = ICON_PENCIL;
   for (const place of visiblePlaces(settings.places)) {
     const pill = document.createElement("button");
     pill.className = "view-pill" + (place.id === view ? " active" : "");
@@ -452,105 +447,14 @@ function renderViewBar() {
     pill.querySelector(".view-pill-name").textContent = place.name;
     pill.addEventListener("click", () => {
       if (barSuppressClick) return;
-      if (viewbarEditing) return;
       switchView(place.id);
     });
-    if (viewbarEditing) {
-      const dot = pill.querySelector(".view-dot");
-      dot.classList.add("view-dot-close");
-      dot.innerHTML = ICON_CLOSE;
-      dot.addEventListener("click", (e) => {
-        e.stopPropagation();
-        runViewbarEditBadge(place);
-      });
-      bindViewPillReorder(pill, dot);
-    }
     viewbarTrack.appendChild(pill);
   }
 }
 
-// 編集モード中、ピル自体を横ドラッグして並べ替える（設定「場所」カードの
-// bindPlaceReorder の横方向版）。closeEl（✕）からのドラッグ開始は除外し、
-// クリックと競合しないよう ±6px の移動閾値を挟んでからドラッグ扱いにする。
-function bindViewPillReorder(pill, closeEl) {
-  const DRAG_THRESHOLD = 6;
-
-  pill.addEventListener("pointerdown", (e) => {
-    if (closeEl.contains(e.target)) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    let dragging = false;
-
-    const move = (ev) => {
-      if (ev.pointerId !== e.pointerId) return;
-      if (!dragging) {
-        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
-        dragging = true;
-        barSuppressClick = true;
-        try {
-          pill.setPointerCapture(e.pointerId);
-        } catch {}
-        pill.classList.add("dragging");
-        viewbarTrack.classList.add("reordering");
-      }
-      for (const other of viewbarTrack.querySelectorAll(".view-pill")) {
-        if (other === pill) continue;
-        const rect = other.getBoundingClientRect();
-        const mid = rect.left + rect.width / 2;
-        const pillIsAfter = !!(other.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING);
-        if (ev.clientX < mid && pillIsAfter) {
-          viewbarTrack.insertBefore(pill, other);
-          break;
-        }
-        if (ev.clientX > mid && !pillIsAfter) {
-          viewbarTrack.insertBefore(pill, other.nextSibling);
-          break;
-        }
-      }
-    };
-
-    const finish = (ev) => {
-      if (ev.pointerId !== e.pointerId) return;
-      pill.removeEventListener("pointermove", move);
-      pill.removeEventListener("pointerup", finish);
-      pill.removeEventListener("pointercancel", finish);
-      pill.classList.remove("dragging");
-      viewbarTrack.classList.remove("reordering");
-      if (dragging) {
-        const visibleIds = [...viewbarTrack.querySelectorAll(".view-pill")].map((el) => el.dataset.view);
-        settings.places = reorderVisiblePlaces(settings.places, visibleIds);
-        saveSettings();
-      }
-      setTimeout(() => {
-        barSuppressClick = false;
-      }, 0);
-      render();
-    };
-
-    pill.addEventListener("pointermove", move);
-    pill.addEventListener("pointerup", finish);
-    pill.addEventListener("pointercancel", finish);
-  });
-}
-
-function setViewbarEditing(editing) {
-  if (viewbarEditing === editing) return;
-  viewbarEditing = editing;
-  renderViewBar();
-}
-
-// バッジタップ: 登録ノードは削除確認シートを挟んで削除、組み込みは即座に非表示
-// （最後の表示中ビューは toggleInView がガードする）。
-function runViewbarEditBadge(place) {
-  if (editBadgeAction(place) === "delete") {
-    openDeleteConfirm(place.name, () => deletePlace(place.id), DELETE_NOTE_PLACE);
-    return;
-  }
-  togglePlaceView(place.id);
-}
-
 function bindViewbarEdit() {
-  btnViewbarEdit.addEventListener("click", () => setViewbarEditing(!viewbarEditing));
+  btnViewbarEdit.addEventListener("click", openPlacesSheet);
 }
 
 function switchView(next) {
@@ -591,7 +495,7 @@ function bindViewBarSwipe() {
   });
 
   viewbar.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== pointerId || consumed || viewbarEditing) return;
+    if (e.pointerId !== pointerId || consumed) return;
     const step = resolveBarStep(e.clientX - startX);
     if (step !== 0) {
       consumed = true;
@@ -1833,6 +1737,7 @@ function uiLayerFlags() {
     detailOpen: !sheetTaskEl.classList.contains("hidden"),
     subtreeOpen: subtreeStack.length > 0,
     composeOpen,
+    placesOpen: !sheetPlacesEl.classList.contains("hidden"),
     settingsOpen: !screenSettings.classList.contains("hidden"),
     drilldown: view === "tasks" && tab === "nodes" && !!selectedNodeKey,
   };
@@ -1863,6 +1768,8 @@ function closeTopLayer() {
     popSubtree();
   } else if (layer === "compose") {
     sheetAddEl.classList.add("hidden");
+  } else if (layer === "places") {
+    closePlacesSheet();
   } else if (layer === "settings") {
     screenSettings.classList.add("hidden");
   } else if (layer === "drilldown") {
@@ -2444,11 +2351,22 @@ async function snoozeSheetTask(option) {
 function openSettings() {
   settingsDate.textContent = formatHeaderDate();
   updateApiKeyUI();
-  renderPlaceList();
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
   armHistory();
+}
+
+// ビューバーの編集ボタンから開く「ビューを編集」シート。並べ替え・表示切替・
+// 削除は設定「場所」カードと同じ renderPlaceList/bindPlaceReorder を共有する。
+function openPlacesSheet() {
+  renderPlaceList();
+  sheetPlacesEl.classList.remove("hidden");
+  armHistory();
+}
+
+function closePlacesSheet() {
+  sheetPlacesEl.classList.add("hidden");
 }
 
 function updateApiKeyUI() {
@@ -2570,7 +2488,7 @@ function renderPlaceList() {
     eye.addEventListener("click", () => togglePlaceView(place.id));
 
     const del = row.querySelector(".place-delete");
-    if (del) del.addEventListener("click", () => deletePlace(place.id));
+    if (del) del.addEventListener("click", () => openDeleteConfirm(place.name, () => deletePlace(place.id), DELETE_NOTE_PLACE));
 
     bindPlaceReorder(row);
     placeList.appendChild(row);

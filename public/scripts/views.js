@@ -175,6 +175,7 @@ export function topUiLayer({
   detailOpen,
   subtreeOpen,
   composeOpen,
+  placesOpen,
   settingsOpen,
   drilldown,
 }) {
@@ -184,6 +185,7 @@ export function topUiLayer({
   if (detailOpen) return "detail";
   if (subtreeOpen) return "subtree";
   if (composeOpen) return "compose";
+  if (placesOpen) return "places";
   if (settingsOpen) return "settings";
   if (drilldown) return "drilldown";
   return null;

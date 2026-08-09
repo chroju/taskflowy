@@ -110,6 +110,7 @@ const taskList = $("task-list");
 const btnAddTask = $("btn-add-task");
 const viewbar = $("viewbar");
 const viewbarTrack = $("viewbar-track");
+const btnViewbarEdit = $("btn-viewbar-edit");
 
 const sheetTaskEl = $("sheet-task");
 const sheetItemMeta = $("sheet-item-meta");
@@ -123,6 +124,7 @@ const sheetTaskNode = $("sheet-task-node");
 const sheetTaskNote = $("sheet-task-note");
 const sheetTaskLink = $("sheet-task-link");
 const btnSheetShare = $("btn-sheet-share");
+const btnSheetRegisterPlace = $("btn-sheet-register-place");
 const sheetShareEl = $("sheet-share");
 const btnShareUrl = $("btn-share-url");
 const btnShareText = $("btn-share-text");
@@ -183,8 +185,9 @@ const reminderHoursEl = $("reminder-hours");
 const btnTestNotification = $("btn-test-notification");
 const syncLabel = $("sync-label");
 const btnSyncNow = $("btn-sync-now");
-const placeList = $("place-list");
+const placeList = $("places-sheet-list");
 const placeCount = $("place-count");
+const sheetPlacesEl = $("sheet-places");
 const btnAddDestination = $("btn-add-destination");
 const panelAddDest = $("panel-add-destination");
 const nodeTree = $("node-tree");
@@ -429,8 +432,11 @@ function renderTasksView() {
 
 let barSuppressClick = false;
 
+const ICON_PENCIL = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+
 function renderViewBar() {
-  viewbarTrack.innerHTML = "";
+  btnViewbarEdit.innerHTML = ICON_PENCIL;
+  viewbarTrack.querySelectorAll(".view-pill").forEach((el) => el.remove());
   for (const place of visiblePlaces(settings.places)) {
     const pill = document.createElement("button");
     pill.className = "view-pill" + (place.id === view ? " active" : "");
@@ -443,8 +449,13 @@ function renderViewBar() {
       if (barSuppressClick) return;
       switchView(place.id);
     });
-    viewbarTrack.appendChild(pill);
+    // 編集ボタン（トラック末尾の固定要素）の直前に差し込む
+    viewbarTrack.insertBefore(pill, btnViewbarEdit);
   }
+}
+
+function bindViewbarEdit() {
+  btnViewbarEdit.addEventListener("click", openPlacesSheet);
 }
 
 function switchView(next) {
@@ -1419,6 +1430,8 @@ function fillSheet() {
   btnSheetLayout.classList.toggle("hidden", !!sheetDate);
   // 日付ノードの id は日付キーで workflowyUrl の対象外なので共有ボタンごと隠す
   btnSheetShare.classList.toggle("hidden", !!sheetDate);
+  // 場所として登録できるのは実ノード（タスク/メモ）のみ
+  btnSheetRegisterPlace.classList.toggle("hidden", !!sheetDate);
   btnSheetLayout.textContent = layoutActionLabel(!sheetIsMemo);
   sheetActions.classList.toggle("only-delete", !!sheetDate);
 
@@ -1653,6 +1666,19 @@ async function toggleSheetLayout() {
 
 // ==================== 共有 ====================
 
+// 詳細シートで見ているタスク/メモ自身を新しい場所（登録ノードビューの起点）
+// として登録する。子を持たないタスクだと登録後のビューは空になる。
+function registerSheetTaskAsPlace() {
+  if (!sheetTask || sheetDate) return;
+  const name = normalizeTitle(sheetTask.plainName) || "（無題）";
+  const refPath =
+    sheetTask.parentPath && sheetTask.parentPath.length
+      ? sheetTask.parentPath.map((p) => normalizeTitle(p) || p).join(" / ")
+      : undefined;
+  registerPlace(name, sheetTask.id, refPath);
+  showToast("場所を登録しました");
+}
+
 function openShareSheet() {
   if (!sheetTask || sheetDate) return;
   sheetShareEl.classList.remove("hidden");
@@ -1712,6 +1738,7 @@ function uiLayerFlags() {
     detailOpen: !sheetTaskEl.classList.contains("hidden"),
     subtreeOpen: subtreeStack.length > 0,
     composeOpen,
+    placesOpen: !sheetPlacesEl.classList.contains("hidden"),
     settingsOpen: !screenSettings.classList.contains("hidden"),
     drilldown: view === "tasks" && tab === "nodes" && !!selectedNodeKey,
   };
@@ -1742,6 +1769,8 @@ function closeTopLayer() {
     popSubtree();
   } else if (layer === "compose") {
     sheetAddEl.classList.add("hidden");
+  } else if (layer === "places") {
+    closePlacesSheet();
   } else if (layer === "settings") {
     screenSettings.classList.add("hidden");
   } else if (layer === "drilldown") {
@@ -1774,6 +1803,7 @@ function bindBackButton() {
 
 const DELETE_NOTE_NODE = "Workflowy 側のノードも削除されます。元に戻せません。";
 const DELETE_NOTE_DAY = "その日のノートごと Workflowy 側から削除されます。元に戻せません。";
+const DELETE_NOTE_PLACE = "この場所をビューから削除します。Workflowy 側のノードは残ります。";
 
 // note: 日付ノードのように「何が一緒に消えるか」が行の見た目から読めない場合だけ
 // 文面を差し替える。
@@ -2206,6 +2236,7 @@ function bindEvents() {
   btnSheetShare.addEventListener("click", openShareSheet);
   btnShareUrl.addEventListener("click", shareSheetTaskAsUrl);
   btnShareText.addEventListener("click", shareSheetTaskAsText);
+  btnSheetRegisterPlace.addEventListener("click", registerSheetTaskAsPlace);
 
   // タイトル・メモはクリックでその場編集。メモ面はタスク（定義リストの「メモ」行）と
   // メモ（note の読み物面）で要素が分かれるので、同じ保存処理を両方に結ぶ。
@@ -2278,6 +2309,7 @@ function bindEvents() {
   });
 
   bindViewBarSwipe();
+  bindViewbarEdit();
 
   // 無限スクロール（下端付近で自動読み込み）: Daily の過去分と
   // Deadlines 完了グループの続き
@@ -2320,11 +2352,22 @@ async function snoozeSheetTask(option) {
 function openSettings() {
   settingsDate.textContent = formatHeaderDate();
   updateApiKeyUI();
-  renderPlaceList();
   refreshNotificationUI();
   renderSyncLabel();
   screenSettings.classList.remove("hidden");
   armHistory();
+}
+
+// ビューバーの編集ボタンから開く「ビューを編集」シート。並べ替え・表示切替・
+// 削除は設定「場所」カードと同じ renderPlaceList/bindPlaceReorder を共有する。
+function openPlacesSheet() {
+  renderPlaceList();
+  sheetPlacesEl.classList.remove("hidden");
+  armHistory();
+}
+
+function closePlacesSheet() {
+  sheetPlacesEl.classList.add("hidden");
 }
 
 function updateApiKeyUI() {
@@ -2446,7 +2489,7 @@ function renderPlaceList() {
     eye.addEventListener("click", () => togglePlaceView(place.id));
 
     const del = row.querySelector(".place-delete");
-    if (del) del.addEventListener("click", () => deletePlace(place.id));
+    if (del) del.addEventListener("click", () => openDeleteConfirm(place.name, () => deletePlace(place.id), DELETE_NOTE_PLACE));
 
     bindPlaceReorder(row);
     placeList.appendChild(row);
@@ -2543,6 +2586,25 @@ function bindPlaceReorder(row) {
 
 let settingsTreeRefPath = "";
 
+// 場所を1件追加する共通処理。設定の「場所を追加」（ノードツリーピッカー経由）と
+// 詳細シートの「この場所を登録」の両方から呼ぶ。
+function registerPlace(name, nodeId, refPath) {
+  settings.places = [
+    ...settings.places,
+    {
+      id: crypto.randomUUID(),
+      kind: "node",
+      name,
+      ref: nodeId,
+      refPath: refPath || undefined,
+      inView: true,
+    },
+  ];
+  saveSettings();
+  renderPlaceList();
+  render();
+}
+
 function savePlace() {
   if (!selectedTreeNodeId) {
     showToast("ノードを選択してください", true);
@@ -2554,20 +2616,7 @@ function savePlace() {
     return;
   }
 
-  settings.places = [
-    ...settings.places,
-    {
-      id: crypto.randomUUID(),
-      kind: "node",
-      name,
-      ref: selectedTreeNodeId,
-      refPath: settingsTreeRefPath || undefined,
-      inView: true,
-    },
-  ];
-  saveSettings();
-  renderPlaceList();
-  render();
+  registerPlace(name, selectedTreeNodeId, settingsTreeRefPath);
   panelAddDest.classList.add("hidden");
   showToast("場所を追加しました");
 }

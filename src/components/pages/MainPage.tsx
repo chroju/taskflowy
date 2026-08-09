@@ -49,16 +49,8 @@ export const MainPage: FC = () => (
         <div class="sheet-grabber"></div>
         {/* メモのみ: 時刻 · 場所 */}
         <div id="sheet-item-meta" class="sheet-item-meta hidden"></div>
+        {/* クリックでその場編集（contenteditable。client.js の bindInlineEdit） */}
         <div id="sheet-task-title" class="sheet-title" title="タイトルを編集"></div>
-
-        {/* タイトルエディタ（タイトルタップで開閉） */}
-        <div id="sheet-title-editor" class="sheet-editor hidden">
-          <textarea id="sheet-title-input" class="sheet-textarea" rows={2} placeholder="タイトル"></textarea>
-          <div class="sheet-custom-row">
-            <button id="btn-sheet-cancel-title" class="btn-outline">キャンセル</button>
-            <button id="btn-sheet-save-title" class="chip-submit">保存</button>
-          </div>
-        </div>
 
         <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
@@ -66,7 +58,7 @@ export const MainPage: FC = () => (
           <span class="sheet-prop-label">ノード</span>
           <span id="sheet-task-node" class="sheet-prop-value"></span>
           <span class="sheet-prop-label">メモ</span>
-          <button id="sheet-task-note" class="sheet-prop-value sheet-prop-edit sheet-note" title="メモを編集"></button>
+          <div id="sheet-task-note" class="sheet-prop-value sheet-prop-edit sheet-note" title="メモを編集"></div>
         </div>
 
         {/* 期限エディタ（期限行タップで開閉） */}
@@ -84,16 +76,8 @@ export const MainPage: FC = () => (
           </div>
         </div>
 
-        {/* メモエディタ（メモ行タップで開閉） */}
-        <div id="sheet-note-editor" class="sheet-editor hidden">
-          <textarea id="sheet-note-input" class="sheet-textarea" rows={3} placeholder="メモ"></textarea>
-          <div class="sheet-custom-row">
-            <button id="btn-sheet-cancel-note" class="btn-outline">キャンセル</button>
-            <button id="btn-sheet-save-note" class="chip-submit">保存</button>
-          </div>
-        </div>
-        {/* メモのみ: note を読むための面 */}
-        <div id="sheet-item-note" class="sheet-note-face hidden"></div>
+        {/* メモのみ: note の面。こちらもクリックでその場編集できる */}
+        <div id="sheet-item-note" class="sheet-note-face hidden" title="メモを編集"></div>
         <a id="sheet-task-link" class="sheet-link" href="https://workflowy.com/" target="_blank" rel="noreferrer noopener">
           <span>Workflowy で開く</span>
           <span class="sheet-link-arrow">↗</span>

@@ -111,18 +111,26 @@ npm run test:ui    # vitest UI起動
 - **行操作（全ビュー統一）**: 右スワイプ=完了トグル、左スワイプ=削除（確認シートを挟んで
   `DELETE /api/nodes/:id`）、行タップ=詳細シート（Pointer Eventsでマウスドラッグにも対応）。
   詳細シートはタスク/メモでレイアウトを分ける（メモは時刻·場所+note面の読み物レイアウト）。
-  期限は詳細シートの「明日へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）、
-  メモはメモ行タップで編集（`POST /api/nodes/:id/note`）、タイトルはタイトルタップで編集
-  （`POST /api/nodes/:id/name`）。エディタ（期限/メモ/タイトル）は同時に1つだけ開く
+  期限は詳細シートの「明日へ」またはシート内の期限行タップ（チップ+任意日時、`{date: null}`で解除）。
+  タイトルとメモはクリックしてその場で編集する
+- **インライン編集（タイトル／メモ）**: 別枠のエディタは出さず、表示している面を
+  `contenteditable`にして直接書き換える（`bindInlineEdit`、`client.js`）。フォーカスが外れたら
+  保存し、Escapeで取り消す。タイトルはEnterでも確定、メモは改行を許す。値が変わらなければ
+  APIは呼ばない。対象は3か所：タイトル（`#sheet-task-title`、`POST /api/nodes/:id/name`）、
+  タスクの「メモ」行（`#sheet-task-note`）、メモのnote面（`#sheet-item-note`。
+  どちらも`POST /api/nodes/:id/note`）。メモレイアウトではnoteが空でもnote面を出し、
+  「メモを追加」の誘い文句から書き足せる。シートを閉じるときは`commitInlineEdit`で
+  書きかけを確定させる（`closeTopLayer`が`sheetTask`をnullにする前に呼ぶ）
 - **タイトル編集**: クライアントは表示テキスト（`plainName`相当）だけを送り、サーバが
   `replaceNameText`（`time-markup.ts`）で既存の`<time>`マークアップを付け直す。よって
-  リネームで期限が消えない。Workflowyのインライン装飾（`<b>`など）は表示テキストに
-  畳まれているため、リネームすると失われる
+  リネームで期限が消えない。空タイトルは拒否する。Workflowyのインライン装飾（`<b>`など）は
+  表示テキストに畳まれているため、リネームすると失われる
 - **note ⇄ todo の切り替え**: 詳細シート下部の「メモにする」/「タスクにする」で
   `layoutMode`を切り替える（`POST /api/nodes/:id/layout`、`{todo: boolean}`。todo以外は
   Workflowy既定の`"bullets"`）。ラベルは`layoutActionLabel`（`views.js`）。Tasksビューは
   layoutMode=todoのノードだけの一覧なので、メモに変えると`tasksState`から外してシートを閉じる。
-  逆にタスクにしたときは`tasksState`へ楽観的に追加する（親のパスは次の取得で埋まる）
+  逆にタスクにしたときは`tasksState`へ加える（親のパスは次の取得で埋まる）。
+  状態の書き換えはAPI成功後に行う（完了トグルと違い楽観更新にしない）
 - **日付ノードの行操作**: Dailyの日付見出しも項目行と同じ操作対象。タップ=デイリーノートの
   詳細シート（見出し「デイリーノート」+タイトル`YYYY/M/D（曜）`=`dailyNoteTitle`、
   Workflowyで開く+削除のみ）、左スワイプ=その日ごと削除（`DELETE /api/nodes/YYYY-MM-DD`。

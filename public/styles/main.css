@@ -783,12 +783,45 @@ button {
   text-wrap: pretty;
 }
 
-/* 詳細シートのタイトルはタップで編集できる（期限/メモ行と同じ点線下線で示す）。
-   日付ノードでは editable クラスを外し、ただの見出しに戻す */
+/* 詳細シートのタイトルはクリックでその場編集（contenteditable）。日付ノードでは
+   editable クラスを外し、ただの見出しに戻す */
 #sheet-task-title.editable {
-  cursor: pointer;
+  cursor: text;
   text-decoration: underline dotted rgba(230, 232, 236, 0.35);
   text-underline-offset: 5px;
+}
+
+/* インライン編集中: 点線下線を外し、面が編集領域だと分かるよう枠で囲う。
+   レイアウトを動かさないよう、枠のぶんは負のマージンで相殺する。
+   下線を打ち消す側は #id 付きのセレクタと同じ強さで書く必要がある */
+#sheet-task-title.inline-editing,
+#sheet-task-note.inline-editing,
+#sheet-item-note.inline-editing {
+  outline: none;
+  text-decoration: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#sheet-task-title.inline-editing,
+#sheet-task-note.inline-editing {
+  margin: -6px -9px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+/* note 面は元から padding を持つので、枠のぶんだけ内側を削って位置を保つ */
+#sheet-item-note.inline-editing {
+  border: 1px solid var(--line);
+  padding: 14px 15px;
+  max-height: none;
+}
+
+.inline-editing:empty::before {
+  content: attr(data-placeholder);
+  color: var(--subtext0);
 }
 
 /* メモの詳細シート: 読むための画面（時刻 · 場所 / 大きめタイトル / note 面） */
@@ -833,7 +866,7 @@ button {
   overflow-wrap: break-word;
 }
 
-/* 期限/メモ行はタップで編集（buttonとして描画） */
+/* 期限行は button、メモ行は contenteditable の div。どちらも素の見た目に戻す */
 button.sheet-prop-value {
   text-align: left;
   background: transparent;
@@ -846,6 +879,19 @@ button.sheet-prop-value {
 .sheet-prop-edit {
   text-decoration: underline dotted rgba(230, 232, 236, 0.35);
   text-underline-offset: 3px;
+}
+
+.sheet-note.sheet-prop-edit {
+  cursor: text;
+}
+
+/* メモの note 面もクリックでその場編集。note が空の日は誘い文句を薄く出す */
+#sheet-item-note {
+  cursor: text;
+}
+
+#sheet-item-note.empty {
+  color: var(--subtext0);
 }
 
 .sheet-due {

@@ -35,9 +35,13 @@ export const MainPage: FC = () => (
 
     <main id="task-list" class="task-list"></main>
 
-    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する */}
+    {/* 下部ビューバー（全画面共通）。切り替え操作はこのバーの中だけで完結する。
+        編集ボタンはビューのピルと同じトラック内の末尾要素で、ピルと一緒に
+        横スクロールする（別レイヤーで固定表示すると重なって見えるため） */}
     <nav id="viewbar" class="viewbar" aria-label="ビュー切り替え">
-      <div id="viewbar-track" class="viewbar-track" role="tablist"></div>
+      <div id="viewbar-track" class="viewbar-track" role="tablist">
+        <button id="btn-viewbar-edit" class="viewbar-edit" title="ビューを編集"></button>
+      </div>
     </nav>
 
     <button id="btn-add-task" class="fab" title="新しく書き留める">+</button>
@@ -99,9 +103,46 @@ export const MainPage: FC = () => (
               <path d="M15.41 6.51l-6.82 3.98"></path>
             </svg>
           </button>
+          <button id="btn-sheet-register-place" class="sheet-action" title="この場所を登録">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21 12 16 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+              <line x1="9" y1="7" x2="15" y2="7"></line>
+              <line x1="12" y1="4" x2="12" y2="10"></line>
+            </svg>
+          </button>
           <button id="btn-sheet-layout" class="sheet-action">メモにする</button>
           <button id="btn-snooze-tomorrow" class="sheet-action">明日へ</button>
           <button id="btn-sheet-complete" class="sheet-action primary">完了にする</button>
+        </div>
+      </div>
+    </div>
+
+    {/* 場所の管理シート（ビューバーの編集ボタンで開く）。並べ替え・表示切替・削除。
+        削除確認シートより手前に出す必要があるため sheet-delete より前に置く
+        （シートの重なりは DOM 順に依存する） */}
+    <div id="sheet-places" class="sheet hidden">
+      <div class="sheet-backdrop" data-close-sheet="sheet-places"></div>
+      <div class="sheet-panel">
+        <div class="sheet-grabber"></div>
+        <div class="card-row space-between">
+          <div class="sheet-title">ビューを編集</div>
+          <span id="place-count" class="place-count"></span>
+        </div>
+        <p class="card-desc">並べ替え・表示のON/OFF・削除ができます。組み込みのビューは削除できません。</p>
+        <div id="places-sheet-list" class="place-list"></div>
+        <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
+
+        <div id="panel-add-destination" class="dest-panel hidden">
+          <div id="node-tree" class="node-tree">
+            <p class="tree-empty">読み込み中...</p>
+          </div>
+          <div class="input-group">
+            <input id="dest-name-input" type="text" class="settings-input" placeholder="表示名" />
+          </div>
+          <div class="card-row">
+            <button id="btn-save-destination" class="btn-fill">保存</button>
+            <button id="btn-cancel-destination" class="btn-outline">キャンセル</button>
+          </div>
         </div>
       </div>
     </div>
@@ -268,28 +309,6 @@ export const MainPage: FC = () => (
           </div>
         </section>
 
-        <section class="card">
-          <div class="card-row space-between">
-            <div class="card-title">場所</div>
-            <span id="place-count" class="place-count"></span>
-          </div>
-          <p class="card-desc">書き込み先とビューの並び順を管理します。眼のアイコンでビューへの表示を切り替えます。</p>
-          <div id="place-list" class="place-list"></div>
-          <button id="btn-add-destination" class="btn-dashed">＋ 場所を追加</button>
-
-          <div id="panel-add-destination" class="dest-panel hidden">
-            <div id="node-tree" class="node-tree">
-              <p class="tree-empty">読み込み中...</p>
-            </div>
-            <div class="input-group">
-              <input id="dest-name-input" type="text" class="settings-input" placeholder="表示名" />
-            </div>
-            <div class="card-row">
-              <button id="btn-save-destination" class="btn-fill">保存</button>
-              <button id="btn-cancel-destination" class="btn-outline">キャンセル</button>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   </div>

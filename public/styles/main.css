@@ -518,7 +518,8 @@ button {
   display: none;
 }
 
-/* 行末スペーサー: 最後のピルが FAB の下に潜らないように */
+/* 行末スペーサー: 編集ボタン（トラック末尾のflexアイテム）が FAB の下に
+   潜らないように */
 .viewbar-track::after {
   content: "";
   flex: none;
@@ -526,6 +527,7 @@ button {
 }
 
 .view-pill {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -560,6 +562,28 @@ button {
 
 .view-pill.active .view-dot {
   background: var(--accent);
+}
+
+/* ビューバーの編集トグル（鉛筆アイコン。「ビューを編集」シートを開く）。
+   ピルと同じトラック内の末尾要素として、ピル列と一緒に横スクロールする */
+.viewbar-edit {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin-left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--subtext0);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.viewbar-edit:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* ビュー切り替えは横スライドではなくクロスフェード（バー上のスワイプと

@@ -189,6 +189,7 @@ describe("topUiLayer", () => {
     pickerOpen: false,
     detailOpen: false,
     composeOpen: false,
+    placesOpen: false,
     settingsOpen: false,
     subtreeOpen: false,
     drilldown: false,
@@ -235,6 +236,15 @@ describe("topUiLayer", () => {
 
   it("closes the settings screen", () => {
     expect(topUiLayer({ ...none, settingsOpen: true })).toBe("settings");
+  });
+
+  it("closes the places (view bar edit) sheet before settings", () => {
+    expect(topUiLayer({ ...none, placesOpen: true, settingsOpen: true })).toBe("places");
+    expect(topUiLayer({ ...none, placesOpen: true })).toBe("places");
+  });
+
+  it("closes an open sheet (e.g. delete confirmation) before the places sheet", () => {
+    expect(topUiLayer({ ...none, deleteOpen: true, placesOpen: true })).toBe("delete");
   });
 });
 

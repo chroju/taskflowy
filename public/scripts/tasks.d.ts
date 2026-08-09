@@ -77,8 +77,11 @@ export function shareText(name: string, note: string | null | undefined): string
 export function swipeDirection(dx: number, dy: number, threshold?: number): "horizontal" | "vertical" | null;
 export function resolveSwipeAction(
   dx: number,
-  opts?: { threshold?: number; deleteOnly?: boolean }
+  opts?: { threshold?: number; deleteOnly?: boolean; completeOnly?: boolean }
 ): "complete" | "delete" | null;
-export function clampDx(dx: number, opts?: { max?: number; deleteOnly?: boolean }): number;
+export function clampDx(
+  dx: number,
+  opts?: { max?: number; deleteOnly?: boolean; completeOnly?: boolean }
+): number;
 
 export function dueShortcut(option: string, todayStr?: string): { date: string } | null;

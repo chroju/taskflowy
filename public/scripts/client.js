@@ -53,6 +53,8 @@ import {
   reorderPlaces,
   parseSharePayload,
   normalizeDraftNote,
+  recurLabel,
+  recurRuleFor,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -76,6 +78,9 @@ let sheetIsMemo = false; // メモ用の読み物レイアウトで表示中か
 let sheetDate = null; // Daily の日付ノードを開いているときの日付キー
 let addDue = "today"; // selected chip in the add sheet
 let pendingDelete = null; // { run } awaiting delete confirmation
+// 繰り返しルール: nodeId -> rule。サーバー（KV）が正で、起動時に取得して
+// LocalStorage にミラーする（オフライン起動でも表示が組めるように）
+let recurRules = loadRecurRules();
 
 // Daily ビュー
 let dailyGroups = [];
@@ -135,6 +140,8 @@ const sheetDueEditor = $("sheet-due-editor");
 const sheetDateInput = $("sheet-date-input");
 const sheetTimeInput = $("sheet-time-input");
 const btnSheetSetDue = $("btn-sheet-set-due");
+const sheetTaskRecur = $("sheet-task-recur");
+const sheetRecurEditor = $("sheet-recur-editor");
 const btnSheetLayout = $("btn-sheet-layout");
 
 const sheetAddEl = $("sheet-add");
@@ -219,6 +226,7 @@ async function init() {
   }
   render();
   loadCurrentView();
+  fetchRecurRules();
   openSharedComposeIfAny();
 }
 
@@ -296,6 +304,39 @@ async function apiRequest(path, options = {}) {
   return res.json();
 }
 
+// ==================== Recurrence rules ====================
+
+const RECUR_RULES_KEY = "taskflowy_recur_rules";
+
+function loadRecurRules() {
+  try {
+    const raw = localStorage.getItem(RECUR_RULES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+function saveRecurRules() {
+  try {
+    localStorage.setItem(RECUR_RULES_KEY, JSON.stringify(recurRules));
+  } catch {}
+}
+
+// ルール一覧の取得は表示補助（↻ マークと繰り返し行）なので、失敗しても
+// LocalStorage のミラーで続行し、エラーは出さない。
+async function fetchRecurRules() {
+  if (!isAuthenticated) return;
+  try {
+    const data = await apiRequest("/recur");
+    recurRules = data.rules && typeof data.rules === "object" ? data.rules : {};
+    saveRecurRules();
+    render();
+  } catch {}
+}
+
 // ==================== Task cache ====================
 
 const TASKS_CACHE_KEY = "taskflowy_tasks_cache";
@@ -368,9 +409,15 @@ function escapeText(str) {
 
 // ==================== Rendering ====================
 
+// Nodes タブの集計対象。仮想完了行（繰り返しの完了記録）を含めると、同じ
+// タスクが完了のたびに二重三重に数えられて done/total が膨らむため除く。
+function nodeSummaryTasks() {
+  return tasksState.filter((t) => !t.virtual);
+}
+
 function selectedNode() {
   if (!selectedNodeKey) return null;
-  return summarizeNodes(tasksState).find((n) => n.key === selectedNodeKey) || null;
+  return summarizeNodes(nodeSummaryTasks()).find((n) => n.key === selectedNodeKey) || null;
 }
 
 function currentPlace() {
@@ -905,7 +952,7 @@ function loadMoreCompletedDue() {
 }
 
 function renderNodeList() {
-  const allNodes = summarizeNodes(tasksState);
+  const allNodes = summarizeNodes(nodeSummaryTasks());
   const showFinished = settings.showFinishedNodes === true;
   const nodes = filterFinishedNodes(allNodes, showFinished);
   const hiddenCount = allNodes.length - nodes.length;
@@ -1010,13 +1057,20 @@ function buildTaskRow(task, { showParent }) {
   }
   row.appendChild(body);
 
-  // 期限が無い行は右カラムごと出さない（タイトルが横幅いっぱいに伸びる）
-  if (task.due) {
+  // 期限が無い行は右カラムごと出さない（タイトルが横幅いっぱいに伸びる）。
+  // 繰り返しタスクは期限の左に ↻ を添える
+  if (task.due || recurRules[task.id]) {
     const meta = document.createElement("div");
     meta.className = "task-meta";
     const due = document.createElement("div");
     due.className = "task-due";
-    due.textContent = formatDueShort(task.due, today);
+    if (recurRules[task.id]) {
+      const mark = document.createElement("span");
+      mark.className = "task-recur-mark";
+      mark.textContent = "↻ ";
+      due.appendChild(mark);
+    }
+    due.appendChild(document.createTextNode(task.due ? formatDueShort(task.due, today) : ""));
     meta.appendChild(due);
     row.appendChild(meta);
   }
@@ -1032,6 +1086,9 @@ function buildTaskRow(task, { showParent }) {
   });
 
   bindRowSwipe(wrap, row, {
+    // 仮想完了行（繰り返しの完了記録）は左スワイプ削除を持たない。
+    // 削除してしまうと繰り返し元の実ノードごと消えるため。
+    completeOnly: !!task.virtual,
     onToggleComplete: () => toggleComplete(task, row),
     onDelete: () =>
       openDeleteConfirm(normalizeTitle(task.plainName) || "（無題）", () => deleteTask(task, wrap, row)),
@@ -1127,6 +1184,12 @@ function buildItemRow(item, { showTime, origin }) {
       due.textContent = formatDueShort(item.due, localDateString());
       tagRow.appendChild(due);
     }
+    if (recurRules[item.id]) {
+      const mark = document.createElement("span");
+      mark.className = "item-tag-due task-recur-mark";
+      mark.textContent = "↻";
+      tagRow.appendChild(mark);
+    }
     body.appendChild(tagRow);
   }
 
@@ -1173,7 +1236,72 @@ function applyRowState(row, task) {
 
 // ==================== Task actions ====================
 
+// ---- 繰り返しタスク ----
+//
+// 完了トグルは通常の complete/uncomplete ではなく /api/recur を使う:
+// Workflowy 側のノードは完了させず、期日を次回へ進めて完了記録を KV に残す。
+// 楽観更新はしない（期日書き換えと記録の 2 状態が絡むため、API 成功後に反映）。
+
+// 完了記録を tasksState に反映する: 実タスクの期日を次回へ進め、完了済みの
+// 仮想行（サーバーの /api/tasks が返すものと同じ形）を追加する。
+function applyRecurCompletion(nodeId, nextDue, recurDate) {
+  const live = tasksState.find((t) => t.id === nodeId && !t.virtual);
+  if (!live) return;
+  tasksState.push({
+    ...live,
+    completed: true,
+    completedAt: Math.floor(Date.now() / 1000),
+    virtual: true,
+    recurDate,
+  });
+  live.due = nextDue;
+  setTasksCache(tasksState);
+}
+
+async function recurComplete(task, { origin = "tasks", item = null } = {}) {
+  const localDate = localDateString();
+  try {
+    const res = await apiRequest(`/recur/${encodeURIComponent(task.id)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ localDate }),
+    });
+    applyRecurCompletion(task.id, res.due, localDate);
+    // 実行元がタスクビュー以外なら、そのビューの行の期日も進める
+    // （行は未完了のまま残る = 次回分として見える）
+    if (item) {
+      item.due = res.due;
+      persistOriginCache(origin);
+    }
+    render();
+    showToast(`完了にしました。次回は ${formatDueShort(res.due, localDate)}`);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// 仮想完了行の右スワイプ/「未完了に戻す」: 完了記録を取り消し、期日を戻す。
+async function recurUncomplete(task) {
+  try {
+    const res = await apiRequest(`/recur/${encodeURIComponent(task.id)}/uncomplete`, {
+      method: "POST",
+      body: JSON.stringify({ date: task.recurDate }),
+    });
+    tasksState = tasksState.filter(
+      (t) => !(t.virtual && t.id === task.id && t.recurDate === task.recurDate)
+    );
+    const live = tasksState.find((t) => t.id === task.id && !t.virtual);
+    if (live) live.due = res.due;
+    setTasksCache(tasksState);
+    render();
+    showToast("未完了に戻しました");
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
 async function toggleComplete(task, row) {
+  if (task.virtual) return recurUncomplete(task);
+  if (!task.completed && recurRules[task.id]) return recurComplete(task);
   const target = !task.completed;
   task.completed = target;
   if (row) applyRowState(row, task);
@@ -1199,6 +1327,7 @@ function persistOriginCache(origin) {
 }
 
 async function toggleItemComplete(item, row, origin) {
+  if (!item.completed && recurRules[item.id]) return recurComplete(item, { origin, item });
   const target = !item.completed;
   item.completed = target;
   if (row) applyItemRowState(row, item);
@@ -1323,7 +1452,7 @@ function scheduleTask(task, dateStr, timeStr) {
 // because Chrome for Android's own touch-and-hold handling swallowed it
 // before our handler saw it.
 function bindRowSwipe(wrap, row, handlers) {
-  const deleteOnly = !!handlers.deleteOnly;
+  const swipeOpts = { deleteOnly: !!handlers.deleteOnly, completeOnly: !!handlers.completeOnly };
   let activePointerId = null;
   let startX = 0;
   let startY = 0;
@@ -1359,12 +1488,12 @@ function bindRowSwipe(wrap, row, handlers) {
     if (direction !== "horizontal") return;
 
     dragging = true;
-    dx = clampDx(curDx, { deleteOnly });
+    dx = clampDx(curDx, swipeOpts);
     row.style.transform = `translateX(${dx}px)`;
     // 背面の色: 方向としきい値到達で濃さを変える（反対側のラベルは消す）
     wrap.classList.toggle("swipe-right", dx > 0);
     wrap.classList.toggle("swipe-left", dx < 0);
-    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx, { deleteOnly }) !== null);
+    wrap.classList.toggle("past-threshold", resolveSwipeAction(dx, swipeOpts) !== null);
   });
 
   const finish = (e, commit) => {
@@ -1378,7 +1507,7 @@ function bindRowSwipe(wrap, row, handlers) {
       setTimeout(() => {
         suppressClick = false;
       }, 0);
-      const action = commit ? resolveSwipeAction(dx, { deleteOnly }) : null;
+      const action = commit ? resolveSwipeAction(dx, swipeOpts) : null;
       snapBack(row);
       if (action === "complete") {
         handlers.onToggleComplete(); // toggle: right swipe on a completed row uncompletes
@@ -1448,6 +1577,8 @@ function fillSheet() {
     sheetTaskDue.textContent = formatDueDetail(entity.due, today);
     sheetTaskDue.classList.toggle("overdue", !entity.completed && classifyDue(entity.due, today) === "overdue");
     sheetTaskDue.classList.toggle("none", !entity.due);
+    sheetTaskRecur.textContent = recurLabel(recurRules[entity.id]);
+    sheetTaskRecur.classList.toggle("none", !recurRules[entity.id]);
     sheetTaskNode.textContent =
       sheetOrigin === "tasks"
         ? entity.parentPath && entity.parentPath.length
@@ -1460,6 +1591,8 @@ function fillSheet() {
   sheetTaskLink.href = workflowyUrl(entity.id);
   btnSheetComplete.textContent = entity.completed ? "未完了に戻す" : "完了にする";
   btnSheetComplete.classList.toggle("primary", !entity.completed);
+  // 仮想完了行（繰り返しの完了記録）の削除は実ノードごと消してしまうため出さない
+  btnSheetDelete.classList.toggle("hidden", !!entity.virtual);
 }
 
 function openSheetFor(entity, origin) {
@@ -1483,17 +1616,50 @@ function openDailyNoteSheet(group) {
 function showSheet() {
   fillSheet();
   sheetDueEditor.classList.add("hidden");
+  sheetRecurEditor.classList.add("hidden");
   sheetTaskEl.classList.remove("hidden");
   armHistory();
 }
 
+// 期限/繰り返しのエディタは同時に 1 つだけ開く（開く方が他方を閉じる）
 function toggleDueEditor() {
   if (!sheetTask) return;
   const opening = sheetDueEditor.classList.contains("hidden");
   sheetDueEditor.classList.toggle("hidden", !opening);
   if (opening) {
+    sheetRecurEditor.classList.add("hidden");
     sheetDateInput.value = sheetTask.due ? sheetTask.due.date : "";
     sheetTimeInput.value = sheetTask.due && sheetTask.due.time ? sheetTask.due.time : "";
+  }
+}
+
+function toggleRecurEditor() {
+  if (!sheetTask) return;
+  const opening = sheetRecurEditor.classList.contains("hidden");
+  sheetRecurEditor.classList.toggle("hidden", !opening);
+  if (opening) sheetDueEditor.classList.add("hidden");
+}
+
+// 繰り返しエディタのチップ: ルールを保存/解除して表示へ反映する。
+// ルールは KV が正なので、API 成功後にローカルのミラーを書き換える。
+async function applySheetRecur(option) {
+  if (!sheetTask) return;
+  const entity = sheetTask;
+  const rule = recurRuleFor(option, entity.due || null);
+  try {
+    await apiRequest(`/recur/${encodeURIComponent(entity.id)}`, {
+      method: rule ? "PUT" : "DELETE",
+      body: rule ? JSON.stringify(rule) : undefined,
+    });
+    if (rule) recurRules[entity.id] = rule;
+    else delete recurRules[entity.id];
+    saveRecurRules();
+    fillSheet();
+    sheetRecurEditor.classList.add("hidden");
+    render();
+    showToast(rule ? `繰り返し: ${recurLabel(rule)}` : "繰り返しを解除しました");
+  } catch (e) {
+    showToast(e.message, true);
   }
 }
 
@@ -2234,6 +2400,10 @@ function bindEvents() {
   btnSnoozeTomorrow.addEventListener("click", () => snoozeSheetTask("tomorrow"));
 
   sheetTaskDue.addEventListener("click", toggleDueEditor);
+  sheetTaskRecur.addEventListener("click", toggleRecurEditor);
+  sheetTaskEl.querySelectorAll(".sheet-recur-chip").forEach((chip) => {
+    chip.addEventListener("click", () => applySheetRecur(chip.dataset.recur));
+  });
   btnSheetLayout.addEventListener("click", toggleSheetLayout);
   btnSheetShare.addEventListener("click", openShareSheet);
   btnShareUrl.addEventListener("click", shareSheetTaskAsUrl);
@@ -2404,6 +2574,7 @@ function bindSettingsEvents() {
       showToast("API キーを保存しました");
       render();
       loadTasks(true);
+      fetchRecurRules();
     } catch (e) {
       showToast(e.message, true);
     }

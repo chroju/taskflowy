@@ -59,6 +59,8 @@ export const MainPage: FC = () => (
         <div id="sheet-task-props" class="sheet-props">
           <span class="sheet-prop-label">期限</span>
           <button id="sheet-task-due" class="sheet-prop-value sheet-prop-edit sheet-due" title="期限を変更"></button>
+          <span class="sheet-prop-label">繰り返し</span>
+          <button id="sheet-task-recur" class="sheet-prop-value sheet-prop-edit sheet-due" title="繰り返しを変更"></button>
           <span class="sheet-prop-label">ノード</span>
           <span id="sheet-task-node" class="sheet-prop-value"></span>
           <span class="sheet-prop-label">メモ</span>
@@ -78,6 +80,18 @@ export const MainPage: FC = () => (
             <input id="sheet-time-input" type="time" class="sheet-input-small" />
             <button id="btn-sheet-set-due" class="chip-submit">設定</button>
           </div>
+        </div>
+
+        {/* 繰り返しエディタ（繰り返し行タップで開閉）。毎週/毎月は期限の日
+            （期限がなければ今日）を基準に曜日/日を決める */}
+        <div id="sheet-recur-editor" class="sheet-editor hidden">
+          <div class="sheet-chip-row">
+            <button class="chip sheet-recur-chip" data-recur="none">なし</button>
+            <button class="chip sheet-recur-chip" data-recur="daily">毎日</button>
+            <button class="chip sheet-recur-chip" data-recur="weekly">毎週</button>
+            <button class="chip sheet-recur-chip" data-recur="monthly">毎月</button>
+          </div>
+          <p class="sheet-editor-note">毎週・毎月は期限の日（期限がなければ今日）の曜日・日付で繰り返します。</p>
         </div>
 
         {/* メモのみ: note の面。こちらもクリックでその場編集できる */}

@@ -581,6 +581,16 @@ button {
   color: #1a1a1a;
 }
 
+/* 編集モード中のピル並べ替え（横ドラッグ） */
+.view-pill.dragging {
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.viewbar-track.reordering .view-pill:not(.dragging) {
+  opacity: 0.7;
+}
+
 /* ビューバー右端の編集トグル（鉛筆アイコン） */
 .viewbar-edit {
   position: absolute;

@@ -52,6 +52,7 @@ import {
   editBadgeAction,
   movePlace,
   reorderPlaces,
+  reorderVisiblePlaces,
   parseSharePayload,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
@@ -461,9 +462,73 @@ function renderViewBar() {
         e.stopPropagation();
         runViewbarEditBadge(place);
       });
+      bindViewPillReorder(pill, dot);
     }
     viewbarTrack.appendChild(pill);
   }
+}
+
+// 編集モード中、ピル自体を横ドラッグして並べ替える（設定「場所」カードの
+// bindPlaceReorder の横方向版）。closeEl（✕）からのドラッグ開始は除外し、
+// クリックと競合しないよう ±6px の移動閾値を挟んでからドラッグ扱いにする。
+function bindViewPillReorder(pill, closeEl) {
+  const DRAG_THRESHOLD = 6;
+
+  pill.addEventListener("pointerdown", (e) => {
+    if (closeEl.contains(e.target)) return;
+    const startX = e.clientX;
+    let dragging = false;
+
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
+        dragging = true;
+        barSuppressClick = true;
+        try {
+          pill.setPointerCapture(e.pointerId);
+        } catch {}
+        pill.classList.add("dragging");
+        viewbarTrack.classList.add("reordering");
+      }
+      for (const other of viewbarTrack.querySelectorAll(".view-pill")) {
+        if (other === pill) continue;
+        const rect = other.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        const pillIsAfter = !!(other.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (ev.clientX < mid && pillIsAfter) {
+          viewbarTrack.insertBefore(pill, other);
+          break;
+        }
+        if (ev.clientX > mid && !pillIsAfter) {
+          viewbarTrack.insertBefore(pill, other.nextSibling);
+          break;
+        }
+      }
+    };
+
+    const finish = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      pill.removeEventListener("pointermove", move);
+      pill.removeEventListener("pointerup", finish);
+      pill.removeEventListener("pointercancel", finish);
+      pill.classList.remove("dragging");
+      viewbarTrack.classList.remove("reordering");
+      if (dragging) {
+        const visibleIds = [...viewbarTrack.querySelectorAll(".view-pill")].map((el) => el.dataset.view);
+        settings.places = reorderVisiblePlaces(settings.places, visibleIds);
+        saveSettings();
+      }
+      setTimeout(() => {
+        barSuppressClick = false;
+      }, 0);
+      render();
+    };
+
+    pill.addEventListener("pointermove", move);
+    pill.addEventListener("pointerup", finish);
+    pill.addEventListener("pointercancel", finish);
+  });
 }
 
 function setViewbarEditing(editing) {

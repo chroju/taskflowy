@@ -97,6 +97,17 @@ export function reorderPlaces(places, orderedIds) {
   return next;
 }
 
+// Reorders only the places named in visibleOrderedIds (the view bar's drag
+// result), leaving hidden places at their original index. Unlike
+// reorderPlaces, a hidden place between two visible ones does not get
+// shoved to the end.
+export function reorderVisiblePlaces(places, visibleOrderedIds) {
+  const visibleSet = new Set(visibleOrderedIds);
+  const byId = new Map(places.map((p) => [p.id, p]));
+  let cursor = 0;
+  return places.map((p) => (visibleSet.has(p.id) ? byId.get(visibleOrderedIds[cursor++]) : p));
+}
+
 // ---- View switching ----
 
 // The current view is a place id ('tasks', 'daily', or a registered node's

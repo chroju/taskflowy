@@ -6,6 +6,7 @@ import {
   toggleInView,
   movePlace,
   reorderPlaces,
+  reorderVisiblePlaces,
   editBadgeAction,
   ensureVisibleView,
   stepView,
@@ -131,6 +132,26 @@ describe("movePlace / reorderPlaces", () => {
     const places = placesFixture();
     const next = reorderPlaces(places, ["p1", "tasks"]);
     expect(next.map((p: { id: string }) => p.id)).toEqual(["p1", "tasks", "daily", "p2"]);
+  });
+});
+
+describe("reorderVisiblePlaces", () => {
+  it("reorders only the visible places, keeping hidden ones at their original index", () => {
+    // p2 (hidden) sits between daily and p1 in the underlying list.
+    const places: Place[] = [
+      { id: "tasks", kind: "builtin", name: "Tasks", inView: true },
+      { id: "daily", kind: "daily", name: "Daily", inView: true },
+      { id: "p2", kind: "node", name: "Inbox", ref: "node-2", inView: false },
+      { id: "p1", kind: "node", name: "記事クリップ", ref: "node-1", inView: true },
+    ];
+    // Drag the view bar (tasks/daily/p1 only) to p1, daily, tasks.
+    const next = reorderVisiblePlaces(places, ["p1", "daily", "tasks"]);
+    expect(next.map((p: { id: string }) => p.id)).toEqual(["p1", "daily", "p2", "tasks"]);
+  });
+
+  it("is a no-op when the visible order list is empty or unmatched", () => {
+    const places = placesFixture();
+    expect(reorderVisiblePlaces(places, [])).toEqual(places);
   });
 });
 

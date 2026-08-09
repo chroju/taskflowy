@@ -232,6 +232,33 @@ export function layoutActionLabel(todo) {
   return todo ? "メモにする" : "タスクにする";
 }
 
+// ---- Recurrence (detail sheet) ----
+
+// Label of the 繰り返し row: なし / 毎日 / 毎週月 / 毎月15日.
+export function recurLabel(rule) {
+  if (!rule) return "なし";
+  if (rule.freq === "daily") return "毎日";
+  if (rule.freq === "weekly") return `毎週${JP_WEEKDAYS[rule.weekday]}`;
+  return `毎月${rule.day}日`;
+}
+
+// Builds the rule for a 繰り返しエディタ chip. Weekly / monthly anchor to the
+// task's due date when it has one (set the due date first to pick the day),
+// falling back to today. "none" clears the rule.
+export function recurRuleFor(option, due, todayStr = localDateString()) {
+  const anchor = due ? due.date : todayStr;
+  switch (option) {
+    case "daily":
+      return { freq: "daily" };
+    case "weekly":
+      return { freq: "weekly", weekday: weekdayIndex(anchor) };
+    case "monthly":
+      return { freq: "monthly", day: Number(anchor.split("-")[2]) };
+    default:
+      return null;
+  }
+}
+
 // ---- Compose ----
 
 // Compose destination:

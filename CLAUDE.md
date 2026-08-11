@@ -65,6 +65,9 @@ npm run test:ui    # vitest UI起動
   ビューバーのスワイプ判定、Daily表示ヘルパー、composeの送信先解決・ノート分割、
   詳細シートの種別切り替えラベル）。テストは`src/test/views.test.ts`
 - `scripts/utils.js` - `escapeHtml` / `stripHtml`のみ（Jotflowy由来の自由記述編集系ヘルパーは不要なため削除済み）
+- `scripts/richtext.js` - リッチテキストのサニタイズ/描画（Issue #13）。ホワイトリスト方式で
+  Workflowyのインライン装飾を安全なHTML文字列にする純粋ロジック（DOM利用、jsdomでテスト可能。
+  `src/test/richtext.test.ts`）
 - `styles/main.css` - スタイル（Charcoalテーマ=無彩色+期限切れ`#E39098`のみ。トークンは
   `design_handoff_taskflowy_views`のハンドオフ資料が正。基礎寸法は`design_handoff_workflowy_tasks`。
   フォントは日本語を含む全UIテキストがZen Kaku Gothic New。数値・時刻・日付だけ桁を
@@ -170,6 +173,21 @@ npm run test:ui    # vitest UI起動
   Workflowyで開く+削除のみ）、左スワイプ=その日ごと削除（`DELETE /api/nodes/YYYY-MM-DD`。
   日付キーがそのままノード識別子として通る）。日付に完了の概念がないため右スワイプと
   「完了にする」は持たせない（`bindRowSwipe`の`deleteOnly`、`resolveSwipeAction`/`clampDx`）
+- **リッチテキスト描画**（Issue #13）: Workflowyはインライン装飾をノード名/noteのHTMLタグとして
+  保存する（`<b>`/`<i>`/`<u>`/`<s>`/`<code>`/`<a href>`/`<span class="colored c-red">`等）。
+  行タイトル（`buildTaskRow`/`buildItemRow`）と詳細シート（タイトル・メモ・note面）は
+  `richtext.js`のサニタイザを通して描画する（`setRichTitle`/`setRichNote`、`client.js`）。
+  ホワイトリスト外のタグはテキストへ畳み、属性は落とす（イベントハンドラ・`javascript:`等の
+  XSSベクタはここで遮断。テキストのエスケープはシリアライザ任せ）。`renderRichTitle`は
+  旧`normalizeTitle`と同じ正規化（絵文字除去・空白畳み・先頭タイムスタンプ除去・`<time>`除去）を
+  タグを保ったまま行い、空になれば呼び出し側が「（無題）」に落とす。裸のURLはリンク化し、
+  画像URL（拡張子判定`isImageUrl`）は行内サムネイル`<img class="rt-img">`として表示する
+  （Workflowyが画像URLのリンクをインライン画像として見せる仕様に対応。URL自身がテキストの
+  `<a>`も画像化。一覧では高さ72px、詳細シートでは240pxにCSSで制限）。行内のリンクタップは
+  行タップ（詳細シート）にせずリンク遷移、シート内のリンク/画像タップはインライン編集を
+  開始しない。編集開始時は面がプレーンテキストに置き換わるため、リネーム/メモ保存で装飾が
+  失われる仕様は従来通り。色クラス（`c-*`/`bc-*`）はCharcoalに合わせた低彩度の写像を
+  `main.css`に定義。親パス・子プレビュー・削除確認・トースト等はプレーン表示のまま
 - **期日**: ノード名内の`<time startYear=...>`マークアップが正。`/nodes/:id/schedule`が
   このマークアップを設定/置換する
 - **繰り返しタスク**（Issue #26）: Workflowyに繰り返し機能がないため繰り越し方式で実装。

@@ -1189,7 +1189,9 @@ function buildItemRow(item, { showTime, origin }) {
 
   const name = document.createElement("div");
   name.className = "memo-name";
-  setRichTitle(name, item.plainName, "（無題）");
+  // 登録ノードビュー/サブツリーの行は画像の下に URL も併記する（Daily はメモの
+  // 流し読みが主なのでサムネイルのみ）
+  setRichTitle(name, item.plainName, "（無題）", { imageUrls: origin !== "daily" });
   body.appendChild(name);
 
   // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。

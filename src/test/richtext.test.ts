@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 // richtext.js is a browser ES module (DOM-based, like utils.js)
-const { renderRichText, renderRichTitle, isImageUrl } = await import(
+const { renderRichText, renderRichTitle, isImageUrl, plainTextWithImageUrls } = await import(
   "../../public/scripts/richtext.js"
 );
 
@@ -152,6 +152,64 @@ describe("renderRichText: images", () => {
   it("drops <img> with unsafe src entirely", () => {
     expect(renderRichText('<img src="javascript:alert(1)">')).toBe("");
     expect(renderRichText('<img src="data:image/png;base64,xxx">')).toBe("");
+  });
+});
+
+describe("renderRichText: imageUrls option (detail sheet)", () => {
+  const IMG = "https://i.gyazo.com/abc.png";
+
+  it("appends a visible URL link after each inline image", () => {
+    expect(renderRichText(`<a href="${IMG}">${IMG}</a>`, { imageUrls: true })).toBe(
+      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
+        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
+    );
+  });
+
+  it("applies to bare image URLs and <img> tags too", () => {
+    expect(renderRichText(IMG, { imageUrls: true })).toBe(
+      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
+        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
+    );
+    expect(renderRichText(`<img src="${IMG}">`, { imageUrls: true })).toBe(
+      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
+        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
+    );
+  });
+
+  it("does not append URLs by default (list rows)", () => {
+    expect(renderRichText(`<a href="${IMG}">${IMG}</a>`)).toBe(
+      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">`
+    );
+  });
+
+  it("renderRichTitle supports the option as well", () => {
+    expect(renderRichTitle(`<a href="${IMG}">${IMG}</a>`, { imageUrls: true })).toBe(
+      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
+        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
+    );
+  });
+});
+
+describe("plainTextWithImageUrls", () => {
+  it("flattens markup to text, keeping link text (how Workflowy stores image URLs)", () => {
+    expect(
+      plainTextWithImageUrls('<a href="https://i.gyazo.com/a.png">https://i.gyazo.com/a.png</a>')
+    ).toBe("https://i.gyazo.com/a.png");
+    expect(plainTextWithImageUrls("<b>bold</b> text")).toBe("bold text");
+  });
+
+  it("turns <img> tags into their URL so editing does not lose the image", () => {
+    expect(plainTextWithImageUrls('<img src="https://example.com/a.png">')).toBe(
+      "https://example.com/a.png"
+    );
+    expect(plainTextWithImageUrls('before <img src="https://example.com/a.png"> after')).toBe(
+      "before https://example.com/a.png after"
+    );
+  });
+
+  it("handles empty input", () => {
+    expect(plainTextWithImageUrls("")).toBe("");
+    expect(plainTextWithImageUrls(null)).toBe("");
   });
 });
 

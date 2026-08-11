@@ -62,6 +62,19 @@ function makeImg(src) {
   return img;
 }
 
+// Appends an inline image. With ctx.imageUrls (the detail sheet), the URL is
+// kept visible as a small link after the thumbnail -- the image must not
+// swallow its own URL, or the value can no longer be seen or edited.
+function appendImg(out, src, ctx) {
+  out.appendChild(makeImg(src));
+  if (ctx.imageUrls) {
+    const a = makeLink(src);
+    a.setAttribute("class", "rt-link rt-img-url");
+    a.textContent = src;
+    out.appendChild(a);
+  }
+}
+
 // Appends `text` to `out`, converting bare URLs into links (or inline images
 // for image URLs). Skipped inside an existing <a> to avoid nested links.
 function appendText(text, out, ctx) {
@@ -80,7 +93,7 @@ function appendText(text, out, ctx) {
     if (m.index > last) out.appendChild(document.createTextNode(text.slice(last, m.index)));
     const url = m[0];
     if (isImageUrl(url)) {
-      out.appendChild(makeImg(url));
+      appendImg(out, url, ctx);
     } else {
       const a = makeLink(url);
       a.textContent = url;
@@ -136,7 +149,7 @@ function sanitizeChildren(node, out, ctx) {
       // A link whose visible text is just its own URL (how Workflowy stores a
       // pasted image URL) renders as the image itself.
       if (isImageUrl(href) && (text === "" || text === href)) {
-        out.appendChild(makeImg(href));
+        appendImg(out, href, ctx);
         continue;
       }
       const a = makeLink(href);
@@ -147,7 +160,7 @@ function sanitizeChildren(node, out, ctx) {
 
     if (tag === "IMG") {
       const src = child.getAttribute("src") || "";
-      if (isSafeHttpUrl(src)) out.appendChild(makeImg(src));
+      if (isSafeHttpUrl(src)) appendImg(out, src, ctx);
       continue;
     }
 
@@ -189,14 +202,29 @@ function render(raw, ctx) {
 
 // Note / multi-line rendering: whitespace is preserved (the note faces use
 // white-space: pre-wrap). Returns "" when nothing visible remains.
-export function renderRichText(raw) {
-  return render(raw, { title: false, inLink: false });
+// opts.imageUrls: keep each image's URL visible as a link after the
+// thumbnail (used by the detail sheet, where the value must stay editable).
+export function renderRichText(raw, opts = {}) {
+  return render(raw, { title: false, inLink: false, imageUrls: !!opts.imageUrls });
 }
 
 // Title rendering for list rows and the detail sheet. Normalized like the old
 // plain path (emoji stripped, whitespace collapsed, leading timestamp cut)
 // but with the formatting whitelist kept. Returns "" when nothing visible
 // remains (the caller falls back to its placeholder).
-export function renderRichTitle(raw) {
-  return render(raw, { title: true, inLink: false });
+export function renderRichTitle(raw, opts = {}) {
+  return render(raw, { title: true, inLink: false, imageUrls: !!opts.imageUrls });
+}
+
+// Plain text for the inline editors: like stripHtml, but an <img> flattens to
+// its URL instead of vanishing, so entering edit mode never loses an image.
+// (Workflowy normally stores an image as a self-labelled <a>, whose URL
+// already survives as link text; this covers literal <img> markup too.)
+export function plainTextWithImageUrls(raw) {
+  if (!raw) return "";
+  const doc = new DOMParser().parseFromString(String(raw), "text/html");
+  for (const img of Array.from(doc.body.querySelectorAll("img"))) {
+    img.replaceWith(doc.createTextNode(img.getAttribute("src") || ""));
+  }
+  return doc.body.textContent || "";
 }

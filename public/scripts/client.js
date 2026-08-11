@@ -1,5 +1,4 @@
-import { stripHtml } from "./utils.js";
-import { renderRichTitle, renderRichText } from "./richtext.js";
+import { renderRichTitle, renderRichText, plainTextWithImageUrls } from "./richtext.js";
 import {
   localDateString,
   addDays,
@@ -417,16 +416,18 @@ function escapeText(str) {
 // richtext.js のサニタイザを通して行と詳細シートに描画する。空になったら
 // （絵文字だけ・空白だけ等）placeholder に落とす。
 
-function setRichTitle(el, raw, placeholder) {
+// opts.imageUrls: 詳細シート用。画像サムネイルの下に URL リンクを併記する
+// （画像で URL が見えなくなると、値の確認も編集もできなくなるため）。
+function setRichTitle(el, raw, placeholder, opts) {
   el.classList.add("rich-text");
-  const html = renderRichTitle(raw);
+  const html = renderRichTitle(raw, opts);
   if (html) el.innerHTML = html;
   else el.textContent = placeholder;
 }
 
-function setRichNote(el, note, placeholder) {
+function setRichNote(el, note, placeholder, opts) {
   el.classList.add("rich-text");
-  const html = note ? renderRichText(note) : "";
+  const html = note ? renderRichText(note, opts) : "";
   if (html) el.innerHTML = html;
   else el.textContent = placeholder;
 }
@@ -1573,7 +1574,7 @@ function fillSheet() {
   const entity = sheetTask;
   const today = localDateString();
 
-  setRichTitle(sheetTaskTitle, entity.plainName, "（無題）");
+  setRichTitle(sheetTaskTitle, entity.plainName, "（無題）", { imageUrls: true });
   sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
   // 日付ノードの名前は日付キーそのものなので編集させない
   sheetTaskTitle.classList.toggle("editable", !sheetDate);
@@ -1597,7 +1598,7 @@ function fillSheet() {
   } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
     sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
-    setRichNote(sheetItemNote, entity.note, "メモを追加");
+    setRichNote(sheetItemNote, entity.note, "メモを追加", { imageUrls: true });
     sheetItemNote.classList.toggle("empty", !entity.note);
   } else {
     sheetTaskDue.textContent = formatDueDetail(entity.due, today);
@@ -1611,7 +1612,7 @@ function fillSheet() {
           ? normalizeTitle(entity.parentPath[entity.parentPath.length - 1])
           : "—"
         : placeLabelForOrigin(sheetOrigin) || "—";
-    setRichNote(sheetTaskNote, entity.note, "—");
+    setRichNote(sheetTaskNote, entity.note, "—", { imageUrls: true });
   }
 
   sheetTaskLink.href = workflowyUrl(entity.id);
@@ -1726,8 +1727,9 @@ function bindInlineEdit(el, { multiline, placeholder, currentValue, save }) {
 
   el.addEventListener("click", (e) => {
     if (!sheetTask || sheetDate || inlineEditing) return;
-    // リッチテキスト内のリンク/画像タップは編集開始にしない（リンクは遷移する）
-    if (e.target instanceof Element && e.target.closest("a, img")) return;
+    // リンクタップは編集開始にせず遷移させる（画像サムネイルのタップは編集開始。
+    // 面が画像だけでも編集の入口が残るように）
+    if (e.target instanceof Element && e.target.closest("a")) return;
     const original = currentValue();
     el.textContent = original;
     el.contentEditable = "plaintext-only";
@@ -2479,11 +2481,14 @@ function bindEvents() {
 
   // タイトル・メモはクリックでその場編集。メモ面はタスク（定義リストの「メモ」行）と
   // メモ（note の読み物面）で要素が分かれるので、同じ保存処理を両方に結ぶ。
-  const noteValue = () => (sheetTask && sheetTask.note ? stripHtml(sheetTask.note) : "");
+  // 編集用のプレーンテキスト化は plainTextWithImageUrls: <img> を URL テキストへ
+  // 落とし、編集に入っただけで画像（URL）が消えることがないようにする。
+  const noteValue = () =>
+    sheetTask && sheetTask.note ? plainTextWithImageUrls(sheetTask.note) : "";
   bindInlineEdit(sheetTaskTitle, {
     multiline: false,
     placeholder: "タイトル",
-    currentValue: () => normalizeTitle(sheetTask.plainName),
+    currentValue: () => normalizeTitle(plainTextWithImageUrls(sheetTask.plainName)),
     save: saveSheetTitle,
   });
   [sheetTaskNote, sheetItemNote].forEach((el) => {

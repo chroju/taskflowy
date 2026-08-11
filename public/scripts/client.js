@@ -416,18 +416,16 @@ function escapeText(str) {
 // richtext.js のサニタイザを通して行と詳細シートに描画する。空になったら
 // （絵文字だけ・空白だけ等）placeholder に落とす。
 
-// opts.imageUrls: 詳細シート用。画像サムネイルの下に URL リンクを併記する
-// （画像で URL が見えなくなると、値の確認も編集もできなくなるため）。
-function setRichTitle(el, raw, placeholder, opts) {
+function setRichTitle(el, raw, placeholder) {
   el.classList.add("rich-text");
-  const html = renderRichTitle(raw, opts);
+  const html = renderRichTitle(raw);
   if (html) el.innerHTML = html;
   else el.textContent = placeholder;
 }
 
-function setRichNote(el, note, placeholder, opts) {
+function setRichNote(el, note, placeholder) {
   el.classList.add("rich-text");
-  const html = note ? renderRichText(note, opts) : "";
+  const html = note ? renderRichText(note) : "";
   if (html) el.innerHTML = html;
   else el.textContent = placeholder;
 }
@@ -1189,9 +1187,7 @@ function buildItemRow(item, { showTime, origin }) {
 
   const name = document.createElement("div");
   name.className = "memo-name";
-  // 登録ノードビュー/サブツリーの行は画像の下に URL も併記する（Daily はメモの
-  // 流し読みが主なのでサムネイルのみ）
-  setRichTitle(name, item.plainName, "（無題）", { imageUrls: origin !== "daily" });
+  setRichTitle(name, item.plainName, "（無題）");
   body.appendChild(name);
 
   // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。
@@ -1576,7 +1572,7 @@ function fillSheet() {
   const entity = sheetTask;
   const today = localDateString();
 
-  setRichTitle(sheetTaskTitle, entity.plainName, "（無題）", { imageUrls: true });
+  setRichTitle(sheetTaskTitle, entity.plainName, "（無題）");
   sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
   // 日付ノードの名前は日付キーそのものなので編集させない
   sheetTaskTitle.classList.toggle("editable", !sheetDate);
@@ -1600,7 +1596,7 @@ function fillSheet() {
   } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
     sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
-    setRichNote(sheetItemNote, entity.note, "メモを追加", { imageUrls: true });
+    setRichNote(sheetItemNote, entity.note, "メモを追加");
     sheetItemNote.classList.toggle("empty", !entity.note);
   } else {
     sheetTaskDue.textContent = formatDueDetail(entity.due, today);
@@ -1614,7 +1610,7 @@ function fillSheet() {
           ? normalizeTitle(entity.parentPath[entity.parentPath.length - 1])
           : "—"
         : placeLabelForOrigin(sheetOrigin) || "—";
-    setRichNote(sheetTaskNote, entity.note, "—", { imageUrls: true });
+    setRichNote(sheetTaskNote, entity.note, "—");
   }
 
   sheetTaskLink.href = workflowyUrl(entity.id);

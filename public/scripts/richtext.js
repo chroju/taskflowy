@@ -3,8 +3,9 @@
 // <a href>, <span class="colored c-red">, ...). This module sanitizes that
 // HTML down to a whitelist and returns a safe HTML string for innerHTML;
 // everything else is dropped or unwrapped to its text (which the serializer
-// escapes). Image links (Workflowy displays image URLs inline) become
-// constrained <img class="rt-img"> thumbnails.
+// escapes). Image URLs stay visible in the text flow as links (so the value
+// can be read and edited), and their thumbnails (<img class="rt-img">) are
+// appended after the text, deduplicated.
 //
 // DOM-based like utils.js, unit-testable under jsdom (src/test/richtext.test.ts).
 
@@ -62,21 +63,11 @@ function makeImg(src) {
   return img;
 }
 
-// Appends an inline image. With ctx.imageUrls (the detail sheet), the URL is
-// kept visible as a small link after the thumbnail -- the image must not
-// swallow its own URL, or the value can no longer be seen or edited.
-function appendImg(out, src, ctx) {
-  out.appendChild(makeImg(src));
-  if (ctx.imageUrls) {
-    const a = makeLink(src);
-    a.setAttribute("class", "rt-link rt-img-url");
-    a.textContent = src;
-    out.appendChild(a);
-  }
-}
-
-// Appends `text` to `out`, converting bare URLs into links (or inline images
-// for image URLs). Skipped inside an existing <a> to avoid nested links.
+// Appends `text` to `out`, converting bare URLs into links. Image URLs are
+// additionally collected into ctx.images: the text keeps flowing with the URL
+// visible in place (so the value can still be read and edited), and the
+// thumbnails are appended after the whole text by render(). Skipped inside an
+// existing <a> to avoid nested links.
 function appendText(text, out, ctx) {
   if (text === "") return;
   if (ctx.title) {
@@ -92,13 +83,10 @@ function appendText(text, out, ctx) {
   while ((m = URL_RE.exec(text))) {
     if (m.index > last) out.appendChild(document.createTextNode(text.slice(last, m.index)));
     const url = m[0];
-    if (isImageUrl(url)) {
-      appendImg(out, url, ctx);
-    } else {
-      const a = makeLink(url);
-      a.textContent = url;
-      out.appendChild(a);
-    }
+    const a = makeLink(url);
+    a.textContent = url;
+    out.appendChild(a);
+    if (isImageUrl(url)) ctx.images.push(url);
     last = m.index + url.length;
   }
   if (last < text.length) out.appendChild(document.createTextNode(text.slice(last)));
@@ -145,22 +133,25 @@ function sanitizeChildren(node, out, ctx) {
         sanitizeChildren(child, out, ctx); // unwrap: keep the text, lose the link
         continue;
       }
-      const text = (child.textContent || "").trim();
-      // A link whose visible text is just its own URL (how Workflowy stores a
-      // pasted image URL) renders as the image itself.
-      if (isImageUrl(href) && (text === "" || text === href)) {
-        appendImg(out, href, ctx);
-        continue;
-      }
       const a = makeLink(href);
       sanitizeChildren(child, a, { ...ctx, inLink: true });
+      if (!a.textContent) a.textContent = href; // 空リンクは見えないので URL を出す
       out.appendChild(a);
+      // 画像リンクはテキストとしてはリンクのまま、サムネイルを本文の後ろに足す
+      if (isImageUrl(href)) ctx.images.push(href);
       continue;
     }
 
     if (tag === "IMG") {
+      // <img> は URL テキスト（リンク）に落とし、サムネイルを後ろに足す。
+      // src が本当に画像かは <img> だったこと自体を信用する（拡張子は見ない）
       const src = child.getAttribute("src") || "";
-      if (isSafeHttpUrl(src)) appendImg(out, src, ctx);
+      if (isSafeHttpUrl(src)) {
+        const a = makeLink(src);
+        a.textContent = src;
+        out.appendChild(a);
+        ctx.images.push(src);
+      }
       continue;
     }
 
@@ -196,24 +187,24 @@ function render(raw, ctx) {
   const out = document.createElement("div");
   sanitizeChildren(doc.body, out, ctx);
   if (ctx.title) finalizeTitle(out);
+  // 集めた画像 URL をテキストの後ろへサムネイルとして並べる（重複は 1 枚に畳む）
+  for (const src of new Set(ctx.images)) out.appendChild(makeImg(src));
   if (!out.textContent.trim() && !out.querySelector("img")) return "";
   return out.innerHTML;
 }
 
 // Note / multi-line rendering: whitespace is preserved (the note faces use
 // white-space: pre-wrap). Returns "" when nothing visible remains.
-// opts.imageUrls: keep each image's URL visible as a link after the
-// thumbnail (used by the detail sheet, where the value must stay editable).
-export function renderRichText(raw, opts = {}) {
-  return render(raw, { title: false, inLink: false, imageUrls: !!opts.imageUrls });
+export function renderRichText(raw) {
+  return render(raw, { title: false, inLink: false, images: [] });
 }
 
 // Title rendering for list rows and the detail sheet. Normalized like the old
 // plain path (emoji stripped, whitespace collapsed, leading timestamp cut)
 // but with the formatting whitelist kept. Returns "" when nothing visible
 // remains (the caller falls back to its placeholder).
-export function renderRichTitle(raw, opts = {}) {
-  return render(raw, { title: true, inLink: false, imageUrls: !!opts.imageUrls });
+export function renderRichTitle(raw) {
+  return render(raw, { title: true, inLink: false, images: [] });
 }
 
 // Plain text for the inline editors: like stripHtml, but an <img> flattens to

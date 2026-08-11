@@ -122,71 +122,57 @@ describe("renderRichText: links", () => {
   });
 });
 
+// 画像はテキストを置き換えない: URL はリンクとして本文中に残し、サムネイルは
+// 本文の後ろへまとめて追加する（「おおお URL ははは」の流れを崩さない）。
 describe("renderRichText: images", () => {
-  it("renders a self-labelled image link as an inline image", () => {
-    expect(
-      renderRichText(
-        '<a href="https://i.gyazo.com/abc.png">https://i.gyazo.com/abc.png</a>'
-      )
-    ).toBe('<img src="https://i.gyazo.com/abc.png" alt="" loading="lazy" draggable="false" class="rt-img">');
+  const IMG = "https://i.gyazo.com/abc.png";
+  const LINK = (href: string, text: string = href) =>
+    `<a href="${href}" target="_blank" rel="noopener noreferrer" class="rt-link">${text}</a>`;
+  const THUMB = (src: string) =>
+    `<img src="${src}" alt="" loading="lazy" draggable="false" class="rt-img">`;
+
+  it("keeps a self-labelled image link as text and appends the thumbnail after", () => {
+    expect(renderRichText(`<a href="${IMG}">${IMG}</a>`)).toBe(LINK(IMG) + THUMB(IMG));
   });
 
-  it("keeps an image link with custom text as a link", () => {
-    expect(renderRichText('<a href="https://example.com/a.png">screenshot</a>')).toBe(
-      '<a href="https://example.com/a.png" target="_blank" rel="noopener noreferrer" class="rt-link">screenshot</a>'
+  it("keeps surrounding text in place, image below", () => {
+    expect(renderRichText(`おおお ${IMG} ははは`)).toBe(
+      `おおお ${LINK(IMG)} ははは` + THUMB(IMG)
     );
   });
 
-  it("renders a bare image URL in text as an inline image", () => {
-    expect(renderRichText("https://example.com/shot.png")).toBe(
-      '<img src="https://example.com/shot.png" alt="" loading="lazy" draggable="false" class="rt-img">'
+  it("keeps an image link with custom text as a link, thumbnail after", () => {
+    expect(renderRichText(`<a href="${IMG}">screenshot</a>`)).toBe(
+      LINK(IMG, "screenshot") + THUMB(IMG)
     );
   });
 
-  it("keeps http(s) <img> tags, dropping other attributes", () => {
-    expect(
-      renderRichText('<img src="https://example.com/a.png" onerror="alert(1)" width="600">')
-    ).toBe('<img src="https://example.com/a.png" alt="" loading="lazy" draggable="false" class="rt-img">');
+  it("turns an <img> tag into its URL link plus the thumbnail", () => {
+    expect(renderRichText(`<img src="${IMG}" onerror="alert(1)" width="600">`)).toBe(
+      LINK(IMG) + THUMB(IMG)
+    );
+  });
+
+  it("collapses duplicate image URLs into one thumbnail", () => {
+    expect(renderRichText(`${IMG} と ${IMG}`)).toBe(
+      `${LINK(IMG)} と ${LINK(IMG)}` + THUMB(IMG)
+    );
+  });
+
+  it("appends multiple distinct thumbnails in order of appearance", () => {
+    const A = "https://example.com/a.png";
+    const B = "https://example.com/b.png";
+    expect(renderRichText(`${A} ${B}`)).toBe(`${LINK(A)} ${LINK(B)}` + THUMB(A) + THUMB(B));
   });
 
   it("drops <img> with unsafe src entirely", () => {
     expect(renderRichText('<img src="javascript:alert(1)">')).toBe("");
     expect(renderRichText('<img src="data:image/png;base64,xxx">')).toBe("");
   });
-});
 
-describe("renderRichText: imageUrls option (detail sheet)", () => {
-  const IMG = "https://i.gyazo.com/abc.png";
-
-  it("appends a visible URL link after each inline image", () => {
-    expect(renderRichText(`<a href="${IMG}">${IMG}</a>`, { imageUrls: true })).toBe(
-      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
-        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
-    );
-  });
-
-  it("applies to bare image URLs and <img> tags too", () => {
-    expect(renderRichText(IMG, { imageUrls: true })).toBe(
-      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
-        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
-    );
-    expect(renderRichText(`<img src="${IMG}">`, { imageUrls: true })).toBe(
-      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
-        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
-    );
-  });
-
-  it("does not append URLs by default (list rows)", () => {
-    expect(renderRichText(`<a href="${IMG}">${IMG}</a>`)).toBe(
-      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">`
-    );
-  });
-
-  it("renderRichTitle supports the option as well", () => {
-    expect(renderRichTitle(`<a href="${IMG}">${IMG}</a>`, { imageUrls: true })).toBe(
-      `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">` +
-        `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link rt-img-url">${IMG}</a>`
-    );
+  it("trusts an <img> tag even without an image extension", () => {
+    const RAW = "https://example.com/uploaded";
+    expect(renderRichText(`<img src="${RAW}">`)).toBe(LINK(RAW) + THUMB(RAW));
   });
 });
 
@@ -256,9 +242,11 @@ describe("renderRichTitle", () => {
     expect(renderRichTitle("🔥")).toBe("");
   });
 
-  it("keeps an image-only title non-empty (image survives)", () => {
-    expect(renderRichTitle('<a href="https://i.gyazo.com/a.png">https://i.gyazo.com/a.png</a>')).toBe(
-      '<img src="https://i.gyazo.com/a.png" alt="" loading="lazy" draggable="false" class="rt-img">'
+  it("keeps an image-only title as its URL link plus the thumbnail", () => {
+    const IMG = "https://i.gyazo.com/a.png";
+    expect(renderRichTitle(`<a href="${IMG}">${IMG}</a>`)).toBe(
+      `<a href="${IMG}" target="_blank" rel="noopener noreferrer" class="rt-link">${IMG}</a>` +
+        `<img src="${IMG}" alt="" loading="lazy" draggable="false" class="rt-img">`
     );
   });
 

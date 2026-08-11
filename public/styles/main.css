@@ -1934,14 +1934,14 @@ button.sheet-prop-value {
   background: var(--surface-tab);
 }
 
-/* 画像リンク/貼り付け画像は行内サムネイル。一覧の走査性を保つため高さを絞り、
-   詳細シートでは大きめに見せる */
+/* 画像URLはテキスト中にリンクとして残し、サムネイルは本文の後ろにまとめて
+   表示する。一覧の走査性を保つため高さを絞り、詳細シートでは大きめに見せる */
 .rich-text .rt-img {
   display: block;
   max-width: 100%;
   max-height: 72px;
   border-radius: 8px;
-  margin: 4px 0 2px;
+  margin: 6px 0 2px;
 }
 
 #sheet-task .rich-text .rt-img {
@@ -1984,13 +1984,3 @@ button.sheet-prop-value {
 .rich-text .bc-purple { background: rgba(184, 166, 217, 0.24); }
 .rich-text .bc-pink { background: rgba(217, 160, 196, 0.24); }
 .rich-text .bc-gray { background: rgba(154, 160, 170, 0.24); }
-
-/* 詳細シートで画像の下に併記する URL（imageUrls オプション）。画像が URL を
-   隠したままだと値の確認・編集ができないため、小さく見えるまま残す */
-.rich-text .rt-img-url {
-  display: block;
-  margin: 2px 0 4px;
-  font: 400 11.5px/1.5 var(--font-mono);
-  color: var(--subtext0);
-  text-decoration-color: var(--hairline);
-}

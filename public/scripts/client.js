@@ -1,4 +1,4 @@
-import { stripHtml } from "./utils.js";
+import { renderRichTitle, renderRichText, plainTextWithImageUrls } from "./richtext.js";
 import {
   localDateString,
   addDays,
@@ -421,6 +421,26 @@ function escapeText(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+// ---- リッチテキスト描画（Issue #13） ----
+//
+// Workflowy のインライン装飾（<b>/<a>/色付き span など）と画像リンクを、
+// richtext.js のサニタイザを通して行と詳細シートに描画する。空になったら
+// （絵文字だけ・空白だけ等）placeholder に落とす。
+
+function setRichTitle(el, raw, placeholder) {
+  el.classList.add("rich-text");
+  const html = renderRichTitle(raw);
+  if (html) el.innerHTML = html;
+  else el.textContent = placeholder;
+}
+
+function setRichNote(el, note, placeholder) {
+  el.classList.add("rich-text");
+  const html = note ? renderRichText(note) : "";
+  if (html) el.innerHTML = html;
+  else el.textContent = placeholder;
 }
 
 // ==================== Rendering ====================
@@ -1238,7 +1258,7 @@ function buildTaskRow(task, { showParent }) {
 
   const title = document.createElement("div");
   title.className = "task-title";
-  title.textContent = normalizeTitle(task.plainName) || "（無題）";
+  setRichTitle(title, task.plainName, "（無題）");
   body.appendChild(title);
 
   if (showParent && task.parentPath && task.parentPath.length) {
@@ -1360,7 +1380,7 @@ function buildItemRow(item, { showTime, origin, showParent = false, childEntry =
 
   const name = document.createElement("div");
   name.className = "memo-name";
-  name.textContent = normalizeTitle(item.plainName) || "（無題）";
+  setRichTitle(name, item.plainName, "（無題）");
   body.appendChild(name);
 
   if (showParent && item.parentPath && item.parentPath.length) {
@@ -1741,9 +1761,11 @@ function bindRowSwipe(wrap, row, handlers) {
   // Tap/click (no drag) opens the detail sheet
   row.addEventListener("click", (e) => {
     if (suppressClick) {
-      e.preventDefault();
+      e.preventDefault(); // スワイプ直後の click はリンクの遷移ごと握りつぶす
       return;
     }
+    // リッチテキスト内のリンクはリンクとして開く（行タップにしない）
+    if (e.target instanceof Element && e.target.closest("a")) return;
     handlers.onTap();
   });
 }
@@ -1762,7 +1784,7 @@ function fillSheet() {
   const entity = sheetTask;
   const today = localDateString();
 
-  sheetTaskTitle.textContent = normalizeTitle(entity.plainName) || "（無題）";
+  setRichTitle(sheetTaskTitle, entity.plainName, "（無題）");
   sheetTaskTitle.classList.toggle("memo", sheetIsMemo || !!sheetDate);
   // 日付ノードの名前は日付キーそのものなので編集させない
   sheetTaskTitle.classList.toggle("editable", !sheetDate);
@@ -1793,7 +1815,7 @@ function fillSheet() {
   } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
     sheetItemMeta.textContent = `${time}${parentLabel || placeLabelForOrigin(sheetOrigin)}`;
-    sheetItemNote.textContent = entity.note ? stripHtml(entity.note) : "メモを追加";
+    setRichNote(sheetItemNote, entity.note, "メモを追加");
     sheetItemNote.classList.toggle("empty", !entity.note);
   } else {
     sheetTaskDue.textContent = formatDueDetail(entity.due, today);
@@ -1803,7 +1825,7 @@ function fillSheet() {
     sheetTaskRecur.classList.toggle("none", !recurRules[entity.id]);
     sheetTaskNode.textContent =
       parentLabel || (sheetOrigin === "tasks" ? "—" : placeLabelForOrigin(sheetOrigin) || "—");
-    sheetTaskNote.textContent = entity.note ? stripHtml(entity.note) : "—";
+    setRichNote(sheetTaskNote, entity.note, "—");
   }
 
   sheetTaskLink.href = workflowyUrl(entity.id);
@@ -1916,8 +1938,11 @@ function commitInlineEdit() {
 function bindInlineEdit(el, { multiline, placeholder, currentValue, save }) {
   el.dataset.placeholder = placeholder;
 
-  el.addEventListener("click", () => {
+  el.addEventListener("click", (e) => {
     if (!sheetTask || sheetDate || inlineEditing) return;
+    // リンクタップは編集開始にせず遷移させる（画像サムネイルのタップは編集開始。
+    // 面が画像だけでも編集の入口が残るように）
+    if (e.target instanceof Element && e.target.closest("a")) return;
     const original = currentValue();
     el.textContent = original;
     el.contentEditable = "plaintext-only";
@@ -2669,11 +2694,14 @@ function bindEvents() {
 
   // タイトル・メモはクリックでその場編集。メモ面はタスク（定義リストの「メモ」行）と
   // メモ（note の読み物面）で要素が分かれるので、同じ保存処理を両方に結ぶ。
-  const noteValue = () => (sheetTask && sheetTask.note ? stripHtml(sheetTask.note) : "");
+  // 編集用のプレーンテキスト化は plainTextWithImageUrls: <img> を URL テキストへ
+  // 落とし、編集に入っただけで画像（URL）が消えることがないようにする。
+  const noteValue = () =>
+    sheetTask && sheetTask.note ? plainTextWithImageUrls(sheetTask.note) : "";
   bindInlineEdit(sheetTaskTitle, {
     multiline: false,
     placeholder: "タイトル",
-    currentValue: () => normalizeTitle(sheetTask.plainName),
+    currentValue: () => normalizeTitle(plainTextWithImageUrls(sheetTask.plainName)),
     save: saveSheetTitle,
   });
   [sheetTaskNote, sheetItemNote].forEach((el) => {

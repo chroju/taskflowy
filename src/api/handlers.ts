@@ -4,6 +4,7 @@ import { setCookie, getCookie } from "hono/cookie";
 import { WorkflowyClient } from "./workflowy-v1";
 import { encrypt, decrypt } from "./crypto";
 import { extractTasks, mergeRecurCompletions } from "./tasks";
+import { buildSearchIndex } from "./search";
 import { collectDailyHistory, toViewItem } from "./daily";
 import { setTimeMarkup, stripTimeMarkup, replaceNameText, parseTimeMarkup } from "./time-markup";
 import { parseRecurRule, nextOccurrence, addRecurTag, removeRecurTag, hasRecurTag } from "./recur";
@@ -216,6 +217,29 @@ api.get("/tasks", async (c) => {
   const tasks = extractTasks(nodes, { includeCompleted: true });
   const completions = await getRecurCompletions(c.env.KV);
   return c.json({ tasks: mergeRecurCompletions(tasks, completions) });
+});
+
+// Search index: every node of the tree (tasks and notes alike) in view-item
+// shape. The search view fetches this once (60s client cache) and runs
+// full-text matching locally, keeping within nodes-export's 1 req/min limit.
+api.get("/search-index", async (c) => {
+  const apiKey = await getApiKey(c as never);
+  const client = new WorkflowyClient(apiKey);
+
+  let nodes;
+  try {
+    nodes = await client.nodesExport();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Same rate-limit handling as /tasks: a distinct 429 lets the client
+    // keep showing its cached index with a friendly message.
+    if (/\b429\b/.test(message)) {
+      return c.json({ error: message }, 429);
+    }
+    return c.json({ error: message }, 500);
+  }
+
+  return c.json({ items: buildSearchIndex(nodes) });
 });
 
 // --- Recurrence (Issue #26) ---

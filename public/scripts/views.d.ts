@@ -1,4 +1,4 @@
-export type PlaceKind = "builtin" | "daily" | "node";
+export type PlaceKind = "builtin" | "daily" | "node" | "search";
 
 export interface Place {
   id: string;
@@ -29,6 +29,20 @@ export function visiblePlaces(places: Place[]): Place[];
 export function toggleInView(places: Place[], id: string): Place[] | null;
 export function movePlace(places: Place[], id: string, delta: number): Place[];
 export function reorderPlaces(places: Place[], orderedIds: string[]): Place[];
+
+export function ensureSearchPlace(places: Place[]): Place[];
+
+export interface SearchItemLike {
+  id: string;
+  plainName?: string;
+  note?: string | null;
+  parentId?: string | null;
+  parentPath?: string[];
+  [key: string]: unknown;
+}
+
+export function searchItems<T extends SearchItemLike>(items: T[], query: string): T[];
+export function attachSearchPaths<T extends SearchItemLike>(items: T[]): T[];
 
 export function ensureVisibleView(places: Place[], view: string | null): string | null;
 export function stepView(places: Place[], view: string, dir: number): string;

@@ -475,6 +475,51 @@ describe("GET /api/tasks", () => {
   });
 });
 
+describe("GET /api/search-index", () => {
+  beforeEach(() => {
+    mockNodesExport.mockReset();
+  });
+
+  it("returns every node (tasks and notes, completed included) with parentId", async () => {
+    mockNodesExport.mockResolvedValue([
+      makeExportNode({ id: "root", name: "Projects" }),
+      makeExportNode({ id: "t1", name: "Open task", parent_id: "root", data: { layoutMode: "todo" } }),
+      makeExportNode({ id: "t2", name: "Done task", parent_id: "root", data: { layoutMode: "todo" }, completedAt: 123 }),
+      makeExportNode({ id: "m1", name: "A memo", parent_id: "root", note: "body text" }),
+    ]);
+
+    const req = makeRequest("/api/search-index");
+    const res = await app.fetch(req, testEnv);
+    const data = (await res.json()) as {
+      items: Array<{ id: string; todo: boolean; completed: boolean; parentId: string | null }>;
+    };
+
+    expect(res.status).toBe(200);
+    expect(data.items).toHaveLength(4);
+    expect(data.items.find((i) => i.id === "t1")).toMatchObject({ todo: true, completed: false, parentId: "root" });
+    expect(data.items.find((i) => i.id === "t2")).toMatchObject({ todo: true, completed: true });
+    expect(data.items.find((i) => i.id === "m1")).toMatchObject({ todo: false, parentId: "root" });
+  });
+
+  it("returns 429 when Workflowy rate-limits nodes-export", async () => {
+    mockNodesExport.mockRejectedValue(new Error("Workflowy API error 429: rate limited"));
+
+    const res = await app.fetch(makeRequest("/api/search-index"), testEnv);
+    const data = (await res.json()) as { error: string };
+
+    expect(res.status).toBe(429);
+    expect(data.error).toMatch(/429/);
+  });
+
+  it("propagates other errors as 500", async () => {
+    mockNodesExport.mockRejectedValue(new Error("Workflowy API error 500: boom"));
+
+    const res = await app.fetch(makeRequest("/api/search-index"), testEnv);
+
+    expect(res.status).toBe(500);
+  });
+});
+
 describe("DELETE /api/nodes/:id", () => {
   beforeEach(() => {
     mockDeleteNode.mockReset();

@@ -80,6 +80,13 @@ export interface ViewItem {
   createdAt: number;
 }
 
+// Item in the search index (GET /api/search-index): every node of the tree
+// in the shared view-item shape, plus parentId so the client can build
+// ancestor paths from the flat list. Full-text matching runs client-side.
+export interface SearchIndexItem extends ViewItem {
+  parentId: string | null;
+}
+
 // One day of daily notes in the Daily view. hasMore is set on the last group
 // of a page when older days likely exist below.
 export interface DailyGroup {

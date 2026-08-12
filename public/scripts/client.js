@@ -57,6 +57,9 @@ import {
   recurRuleFor,
   addRecurTagText,
   removeRecurTagText,
+  ensureSearchPlace,
+  searchItems,
+  attachSearchPaths,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -64,7 +67,8 @@ import { urlBase64ToUint8Array } from "./push.js";
 
 let settings = loadSettings();
 // 場所（ビュー兼書き込み先）モデルへの移行。旧destinations設定から変換する。
-settings.places = migratePlaces(settings).places;
+// 検索ビュー（組み込みの場所）が無い保存済みリストにはここで追加する。
+settings.places = ensureSearchPlace(migratePlaces(settings).places);
 let isAuthenticated = false;
 let view = "tasks"; // 'tasks' | 'daily' | <place id>; restored in init()
 let tab = "today"; // Tasks ビュー内: 'today' | 'due' | 'nodes'
@@ -99,6 +103,14 @@ const nodeViewLoading = new Set();
 // 重ね開けるスタック。メモリ上のみで、登録済みの場所とは異なり永続化しない。
 let subtreeStack = []; // { nodeId, title, items }[]
 let subtreeLoading = false;
+
+// 検索ビュー: 全ノードのインデックス（/api/search-index）を60秒TTLで
+// キャッシュし、絞り込みはクライアント側で行う（nodes-exportの1req/min制限を
+// 1クエリ1リクエストにしないため）。クエリはメモリ上のみで保持する。
+let searchIndex = null; // { items, timestamp }
+let searchLoading = false;
+let searchError = null; // インデックス未取得時に一覧へ出すエラー文言
+let searchQuery = "";
 
 const REMINDER_HOURS = [7, 8, 9, 10, 21];
 const TAB_TITLES = { today: "Today", due: "Deadlines", nodes: "Nodes" };
@@ -247,6 +259,7 @@ function openSharedComposeIfAny() {
 function loadCurrentView(force = false) {
   if (view === "tasks") loadTasks(force);
   else if (view === "daily") loadDaily(force);
+  else if (view === "search") loadSearchIndex(force);
   else loadNodeView(view, force);
 }
 
@@ -445,6 +458,8 @@ function render() {
     renderTasksView();
   } else if (view === "daily") {
     renderDailyView();
+  } else if (view === "search") {
+    renderSearchView();
   } else {
     renderNodeView();
   }
@@ -807,6 +822,180 @@ function renderItemListScreen(allItems, origin, scope = origin) {
   }
 }
 
+// ==================== 検索ビュー（Issue #9） ====================
+//
+// ビューバーの組み込み場所「Search」。Workflowyに検索APIが無いため、
+// /api/search-index（nodes-exportの全ノード）を60秒TTLでキャッシュし、
+// 全文一致（名前+メモ、AND）をクライアント側で行う。結果行は登録ノード
+// ビューと同じ行（スワイプ完了/削除・詳細シート・シートからの場所登録）を
+// そのまま使い、サブツリー展開は行右端のシェブロン（プレビューは行ごとに
+// 子取得のリクエストが走るため、件数が読めない検索結果では使わない）。
+
+const SEARCH_CACHE_KEY = "taskflowy_search_cache";
+const SEARCH_CACHE_TTL_MS = 60 * 1000;
+const SEARCH_DEBOUNCE_MS = 200;
+// 表示上限。子プレビューを持たないためDOM量だけの問題だが、ヒットしすぎる
+// クエリは絞り込んでもらう方が一覧としても意味がある。
+const SEARCH_RESULT_LIMIT = 50;
+
+function getSearchCache() {
+  try {
+    const raw = localStorage.getItem(SEARCH_CACHE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || !Array.isArray(entry.items)) return null;
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function saveSearchCache() {
+  if (!searchIndex) return;
+  try {
+    localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(searchIndex));
+  } catch {
+    // 大きなツリーで容量を超えたら永続化は諦める（メモリ上のインデックスで動く）
+  }
+}
+
+async function loadSearchIndex(force = false) {
+  if (searchLoading || !isAuthenticated) return;
+  if (!searchIndex) {
+    const cache = getSearchCache();
+    if (cache) {
+      searchIndex = cache;
+      if (view === "search") render();
+    }
+  }
+  if (searchIndex && !force && Date.now() - searchIndex.timestamp < SEARCH_CACHE_TTL_MS) return;
+
+  searchLoading = true;
+  if (view === "search" && !searchIndex) render(); // spinner
+  try {
+    const data = await apiRequest("/search-index");
+    searchIndex = { items: attachSearchPaths(data.items), timestamp: Date.now() };
+    searchError = null;
+    saveSearchCache();
+  } catch (e) {
+    const rateLimited = /API error 429/.test(e.message);
+    const message = rateLimited
+      ? "同期が制限されています。1分ほど待って再試行してください。"
+      : e.message;
+    if (!searchIndex) searchError = message;
+    else if (force) showToast(message, true);
+    // 手動同期でない背景更新の失敗は、キャッシュ済みインデックスで黙って続行
+  } finally {
+    searchLoading = false;
+  }
+  if (view === "search") render();
+}
+
+function renderSearchView() {
+  tabbar.classList.add("hidden");
+  btnBack.classList.add("hidden");
+  screenTitle.textContent = "Search";
+
+  if (!isAuthenticated) {
+    screenCount.textContent = "";
+    taskList.innerHTML = '<p class="list-empty">API キーを設定すると検索できます。</p>';
+    return;
+  }
+
+  // 入力中の再描画（背景更新の完了など）でフォーカスを失わないよう引き継ぐ
+  const prevInput = taskList.querySelector("#search-input");
+  const hadFocus = prevInput && document.activeElement === prevInput;
+
+  taskList.innerHTML = "";
+
+  const bar = document.createElement("div");
+  bar.className = "search-bar";
+  const input = document.createElement("input");
+  input.id = "search-input";
+  input.type = "search";
+  input.className = "search-input";
+  input.placeholder = "タスクとメモを検索";
+  input.autocomplete = "off";
+  input.value = searchQuery;
+  bar.appendChild(input);
+  taskList.appendChild(bar);
+
+  const results = document.createElement("div");
+  results.className = "search-results";
+  taskList.appendChild(results);
+
+  let debounce = null;
+  const applyQuery = () => {
+    searchQuery = input.value;
+    renderSearchResults(results);
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(applyQuery, SEARCH_DEBOUNCE_MS);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      clearTimeout(debounce);
+      applyQuery();
+      input.blur(); // モバイルのキーボードを畳んで結果を見せる
+    }
+  });
+
+  if (hadFocus) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  renderSearchResults(results);
+}
+
+function renderSearchResults(container) {
+  container.innerHTML = "";
+
+  if (!searchIndex) {
+    screenCount.textContent = "";
+    container.innerHTML = searchLoading
+      ? '<div class="list-loading"><div class="spinner"></div></div>'
+      : `<p class="list-empty">${escapeText(searchError || "検索インデックスを取得できませんでした")}</p>`;
+    return;
+  }
+
+  if (!searchQuery.trim()) {
+    screenCount.textContent = "";
+    container.innerHTML = '<p class="list-empty">キーワードでタスクとメモを全文検索します</p>';
+    return;
+  }
+
+  const matches = searchItems(searchIndex.items, searchQuery);
+  const showCompleted = showCompletedFor(settings.showCompletedTasks, "search");
+  const visible = filterCompletedItems(matches, showCompleted);
+  const completedCount = matches.length - filterCompletedItems(matches, false).length;
+  screenCount.textContent = `${visible.length} 件`;
+
+  if (completedCount > 0) container.appendChild(buildCompletedToggle(completedCount, "search"));
+
+  if (!visible.length) {
+    const empty = document.createElement("p");
+    empty.className = "list-empty";
+    empty.textContent = "見つかりませんでした";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const item of visible.slice(0, SEARCH_RESULT_LIMIT)) {
+    container.appendChild(
+      buildItemRow(item, { showTime: false, origin: "search", showParent: true, childEntry: "chevron" })
+    );
+  }
+
+  if (visible.length > SEARCH_RESULT_LIMIT) {
+    const more = document.createElement("p");
+    more.className = "list-empty";
+    more.textContent = `他 ${visible.length - SEARCH_RESULT_LIMIT} 件。キーワードを足して絞り込んでください`;
+    container.appendChild(more);
+  }
+}
+
 // ==================== サブツリードリルダウン（任意ノードの子展開） ====================
 //
 // 行タップで対象ノードの子（1階層）を取得し、子が1件以上あれば新しい画面を
@@ -1139,9 +1328,13 @@ function buildDateHeader(group, isToday) {
   return wrap;
 }
 
-// Daily / 登録ノードビューの行（タスクもメモも同じ操作を持つ）。
-// showTime: Daily のみ時刻の左カラムを出す。origin: 'daily' | <place id>。
-function buildItemRow(item, { showTime, origin }) {
+// Daily / 登録ノードビュー / 検索結果の行（タスクもメモも同じ操作を持つ）。
+// showTime: Daily のみ時刻の左カラムを出す。origin: 'daily' | 'search' | <place id>。
+// showParent: 検索結果でどこのノードかを示す親名の行を出す（要 item.parentPath）。
+// childEntry: サブツリー展開への入口。既定の 'preview'（子タイトルの薄い列。
+// 行ごとに子取得のリクエストが走る）か 'chevron'（Today/Deadlines と同じ
+// 右端ボタン。タップ時にだけ取得するため、件数が読めない検索結果はこちら）。
+function buildItemRow(item, { showTime, origin, showParent = false, childEntry = "preview" }) {
   const wrap = document.createElement("div");
   wrap.className = "task-row-wrap";
   wrap.dataset.taskId = item.id;
@@ -1170,6 +1363,13 @@ function buildItemRow(item, { showTime, origin }) {
   name.textContent = normalizeTitle(item.plainName) || "（無題）";
   body.appendChild(name);
 
+  if (showParent && item.parentPath && item.parentPath.length) {
+    const parent = document.createElement("div");
+    parent.className = "task-parent";
+    parent.textContent = normalizeTitle(item.parentPath[item.parentPath.length - 1]);
+    body.appendChild(parent);
+  }
+
   // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。
   if (item.todo) {
     const tagRow = document.createElement("div");
@@ -1197,10 +1397,16 @@ function buildItemRow(item, { showTime, origin }) {
   }
 
   row.appendChild(body);
+  const itemTitle = normalizeTitle(item.plainName) || "（無題）";
+  if (childEntry === "chevron") {
+    row.appendChild(buildExpandChevron(() => expandSubtree(item.id, itemTitle)));
+  }
   wrap.appendChild(row);
   applyItemRowState(row, item);
 
-  bindChildPreview(body, item.id, normalizeTitle(item.plainName) || "（無題）");
+  if (childEntry === "preview") {
+    bindChildPreview(body, item.id, itemTitle);
+  }
 
   bindRowSwipe(wrap, row, {
     onToggleComplete: () => toggleItemComplete(item, row, origin),
@@ -1325,6 +1531,7 @@ async function toggleComplete(task, row) {
 function persistOriginCache(origin) {
   if (origin === "tasks") setTasksCache(tasksState);
   else if (origin === "daily") saveDailyCache();
+  else if (origin === "search") saveSearchCache();
   else if (origin === "subtree") return; // メモリ上のみ、永続化しない
   else saveNodeViewsCache();
 }
@@ -1387,6 +1594,11 @@ function removeItemFromOrigin(id, origin) {
       .map((g) => ({ ...g, items: g.items.filter((i) => i.id !== id) }))
       .filter((g) => g.items.length > 0);
     saveDailyCache();
+  } else if (origin === "search") {
+    if (searchIndex) {
+      searchIndex.items = searchIndex.items.filter((i) => i.id !== id);
+      saveSearchCache();
+    }
   } else if (origin === "subtree") {
     const top = subtreeStack[subtreeStack.length - 1];
     if (top) top.items = top.items.filter((i) => i.id !== id);
@@ -1568,12 +1780,19 @@ function fillSheet() {
   btnSheetLayout.textContent = layoutActionLabel(!sheetIsMemo);
   sheetActions.classList.toggle("only-delete", !!sheetDate);
 
+  // 所属ノードの表示: 親パスを持つ行（Tasksビュー・検索結果）は直近の親名、
+  // 持たない行（Daily・登録ノードビュー）はビューの場所名で代用する。
+  const parentLabel =
+    entity.parentPath && entity.parentPath.length
+      ? normalizeTitle(entity.parentPath[entity.parentPath.length - 1])
+      : "";
+
   if (sheetDate) {
     // 日付ノードには完了の概念がないので「完了にする」は出さない
     sheetItemMeta.textContent = "デイリーノート";
   } else if (sheetIsMemo) {
     const time = sheetOrigin === "daily" ? `${itemTimeLabel(entity.createdAt)} · ` : "";
-    sheetItemMeta.textContent = `${time}${placeLabelForOrigin(sheetOrigin)}`;
+    sheetItemMeta.textContent = `${time}${parentLabel || placeLabelForOrigin(sheetOrigin)}`;
     sheetItemNote.textContent = entity.note ? stripHtml(entity.note) : "メモを追加";
     sheetItemNote.classList.toggle("empty", !entity.note);
   } else {
@@ -1583,11 +1802,7 @@ function fillSheet() {
     sheetTaskRecur.textContent = recurLabel(recurRules[entity.id]);
     sheetTaskRecur.classList.toggle("none", !recurRules[entity.id]);
     sheetTaskNode.textContent =
-      sheetOrigin === "tasks"
-        ? entity.parentPath && entity.parentPath.length
-          ? normalizeTitle(entity.parentPath[entity.parentPath.length - 1])
-          : "—"
-        : placeLabelForOrigin(sheetOrigin) || "—";
+      parentLabel || (sheetOrigin === "tasks" ? "—" : placeLabelForOrigin(sheetOrigin) || "—");
     sheetTaskNote.textContent = entity.note ? stripHtml(entity.note) : "—";
   }
 
@@ -2635,6 +2850,13 @@ function bindSettingsEvents() {
   });
 
   btnSyncNow.addEventListener("click", () => {
+    // 検索ビュー中はインデックスの更新だけ行う。/tasks と /search-index は
+    // どちらも nodes-export（1req/min）を叩くため、同時に強制すると
+    // 片方が必ず 429 になる。タスク一覧は通常の60秒TTLで追いつく。
+    if (view === "search") {
+      loadSearchIndex(true);
+      return;
+    }
     loadTasks(true);
     if (view !== "tasks") loadCurrentView(true);
   });

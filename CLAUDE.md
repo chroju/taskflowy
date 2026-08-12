@@ -80,8 +80,8 @@ npm run test:ui    # vitest UI起動
 ## Key Concepts
 
 - **認証**: APIキーはHTTP-only Cookieに暗号化して保存（Jotflowyと同方式。saltはアプリ固有）
-- **ビュー**: 下部ビューバーで Tasks（組み込み）/ Daily（組み込み）/ 登録ノード（0個以上）を
-  切り替える。切り替え操作はバー上のスワイプ（±44pxで隣へ1つ）とタップのみで、本文領域の
+- **ビュー**: 下部ビューバーで Tasks（組み込み）/ Daily（組み込み）/ Search（組み込み）/
+  登録ノード（0個以上）を切り替える。切り替え操作はバー上のスワイプ（±44pxで隣へ1つ）とタップのみで、本文領域の
   スワイプは行操作に予約。ビューの実体は「場所」リスト（後述）
 - **場所（Place）**: ビュー兼書き込み先。`{id, kind: 'builtin'|'daily'|'node', name, ref, inView}`を
   LocalStorageに保存（`views.js`の`migratePlaces`が旧destinations設定から自動移行）。
@@ -117,6 +117,22 @@ npm run test:ui    # vitest UI起動
   今日だけ曜日バッジを反転する
 - **登録ノードビュー**: `GET /api/nodes/:id/children`で子（1階層）をWorkflowyの並び順のまま表示。
   タスクとメモが混在し、タスクは本文下のTODO/DONEタグだけで示す（タグタップで完了トグル）
+- **検索ビュー**（Issue #9）: ビューバーの組み込み場所「Search」（`kind: 'search'`。
+  `ensureSearchPlace`が保存済みの場所リストへ後付けする）。Workflowyに検索APIが無いため、
+  `GET /api/search-index`が`nodes-export`の全ノード（タスク+メモ、完了済み含む）を
+  ViewItem形+`parentId`で返し（`buildSearchIndex`、`src/api/search.ts`。親パスは
+  ペイロード削減のため埋め込まず、クライアントが`attachSearchPaths`で復元）、
+  クライアントが60秒TTLでキャッシュして全文一致をローカルで行う（`searchItems`、
+  `views.js`。名前+メモ、空白区切りAND、NFKC+小文字+HTMLタグ除去で正規化。
+  1クエリ=1リクエストにしないための設計で、`/tasks`と同じ1req/min制限に収まる。
+  検索ビュー中の「今すぐ同期」はインデックスのみ更新し、`/tasks`との同時強制で
+  片方が429になるのを避ける）。結果行は登録ノードビューと同じ行
+  （`buildItemRow`、`origin: "search"`）で、スワイプ完了/削除・詳細シート・シートからの
+  場所登録がそのまま使える。親ノード名の行を出し（`showParent`）、サブツリー展開の
+  入口は子プレビューではなく右端シェブロン（`childEntry: "chevron"`。プレビューは
+  行ごとに子取得が走るため、件数が読めない検索結果では使わない）。表示は50件で
+  打ち切って絞り込みを促す。完了済み表示トグルはスコープ`search`。クエリは
+  永続化せず、入力は200msデバウンス+Enterで即時確定
 - **戻るボタン**: History APIと統合。レイヤー（シート/設定/ドリルダウン）を開くとき番兵の
   履歴エントリを1つ積み、popstateで最前面のレイヤーを1つ閉じる（残りがあれば積み直す）。
   閉じる順は`topUiLayer`（`views.js`の純粋関数）: 削除確認 > 送信先ピッカー > 詳細シート >

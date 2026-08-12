@@ -36,6 +36,9 @@ import {
   recurRuleFor,
   addRecurTagText,
   removeRecurTagText,
+  ensureSearchPlace,
+  searchItems,
+  attachSearchPaths,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -508,5 +511,94 @@ describe("recur note tag (client mirror)", () => {
     expect(removeRecurTagText("#recurring")).toBe("");
     expect(removeRecurTagText("#recurring-old")).toBe("#recurring-old");
     expect(removeRecurTagText(null)).toBe("");
+  });
+});
+
+describe("ensureSearchPlace", () => {
+  it("appends the built-in Search place when missing", () => {
+    const places = ensureSearchPlace(placesFixture());
+    const search = places[places.length - 1];
+    expect(search).toMatchObject({ id: "search", kind: "search", name: "Search", inView: true });
+    expect(places).toHaveLength(placesFixture().length + 1);
+  });
+
+  it("keeps an existing Search place as-is (including a hidden one)", () => {
+    const withSearch = [
+      ...placesFixture(),
+      { id: "search", kind: "search" as const, name: "Search", inView: false },
+    ];
+    expect(ensureSearchPlace(withSearch)).toBe(withSearch);
+  });
+});
+
+describe("searchItems", () => {
+  const items = [
+    { id: "a", plainName: "Buy milk", note: null, todo: true, completed: false },
+    { id: "b", plainName: "牛乳を買う", note: "スーパーで", todo: true, completed: false },
+    { id: "c", plainName: "Meeting", note: "Discuss milk budget", todo: false, completed: false },
+    { id: "d", plainName: "Done task about milk", note: null, todo: true, completed: true },
+  ];
+
+  it("returns nothing for a blank query", () => {
+    expect(searchItems(items, "")).toEqual([]);
+    expect(searchItems(items, "   ")).toEqual([]);
+  });
+
+  it("matches names case-insensitively", () => {
+    expect(searchItems(items, "MILK").map((i) => i.id)).toEqual(["a", "c", "d"]);
+  });
+
+  it("matches note text too (full text)", () => {
+    expect(searchItems(items, "スーパー").map((i) => i.id)).toEqual(["b"]);
+    expect(searchItems(items, "budget").map((i) => i.id)).toEqual(["c"]);
+  });
+
+  it("AND-combines whitespace-separated terms across name and note", () => {
+    expect(searchItems(items, "milk buy").map((i) => i.id)).toEqual(["a"]);
+    expect(searchItems(items, "牛乳　スーパー").map((i) => i.id)).toEqual(["b"]);
+  });
+
+  it("normalizes full-width and half-width forms (NFKC)", () => {
+    const wide = [{ id: "w", plainName: "ＭＴＧ　資料", note: null, todo: false, completed: false }];
+    expect(searchItems(wide, "mtg").map((i) => i.id)).toEqual(["w"]);
+  });
+
+  it("ignores inline HTML markup and matches decoded entities", () => {
+    const html = [
+      { id: "h", plainName: 'Read <a href="https://x.example">A &amp; B</a>', note: null, todo: false, completed: false },
+    ];
+    expect(searchItems(html, "a & b").map((i) => i.id)).toEqual(["h"]);
+    expect(searchItems(html, "href")).toEqual([]);
+  });
+
+  it("includes completed items (the view filters them separately)", () => {
+    expect(searchItems(items, "done").map((i) => i.id)).toEqual(["d"]);
+  });
+});
+
+describe("attachSearchPaths", () => {
+  type PathItem = { id: string; plainName: string; parentId: string | null; parentPath?: string[] };
+
+  it("builds root-first parent paths by walking parentId", () => {
+    const items: PathItem[] = [
+      { id: "root", plainName: "Projects", parentId: null },
+      { id: "mid", plainName: "Taskflowy", parentId: "root" },
+      { id: "leaf", plainName: "Write tests", parentId: "mid" },
+    ];
+    attachSearchPaths(items);
+    expect(items[0].parentPath).toEqual([]);
+    expect(items[1].parentPath).toEqual(["Projects"]);
+    expect(items[2].parentPath).toEqual(["Projects", "Taskflowy"]);
+  });
+
+  it("truncates at a parent missing from the index", () => {
+    const items: PathItem[] = [{ id: "orphan", plainName: "Orphan", parentId: "gone" }];
+    attachSearchPaths(items);
+    expect(items[0].parentPath).toEqual([]);
+  });
+
+  it("returns the same array for chaining", () => {
+    const items = [{ id: "a", plainName: "A", parentId: null }];
+    expect(attachSearchPaths(items)).toBe(items);
   });
 });

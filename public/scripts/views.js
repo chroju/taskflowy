@@ -91,6 +91,69 @@ export function reorderPlaces(places, orderedIds) {
   return next;
 }
 
+// ---- Search view (Issue #9) ----
+
+// The search view is a built-in place (kind 'search'). Stored place lists
+// that predate it get it appended here; fresh installs go through the same
+// path (defaultPlaces has no search entry), so this is the single source of
+// the entry. Hiding it via the eye toggle sticks -- an existing place is
+// left untouched.
+export function ensureSearchPlace(places) {
+  if (places.some((p) => p.kind === "search")) return places;
+  return [...places, { id: "search", kind: "search", name: "Search", inView: true }];
+}
+
+// 検索用のテキスト正規化: インラインHTMLタグを落として実体参照を戻し、
+// NFKC（全角/半角・互換文字）+小文字で表記ゆれを吸収する。クエリと
+// 対象テキストの両方に同じ正規化をかける。
+function normalizeSearchText(text) {
+  return String(text ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Full-text match over name + note. Whitespace-separated terms are
+// AND-combined. A blank query matches nothing (the view shows a hint, not
+// the whole tree). Completed items are included; the view filters them via
+// the shared completed-visibility toggle.
+export function searchItems(items, query) {
+  const terms = normalizeSearchText(query).split(" ").filter(Boolean);
+  if (!terms.length) return [];
+  return items.filter((item) => {
+    const haystack = normalizeSearchText(`${item.plainName ?? ""}\n${item.note ?? ""}`);
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+// Root-first ancestor names for each index item, resolved by walking
+// parentId through the flat index (mirrors the server's parent-path logic
+// for /api/tasks; plainName is already time-markup-free). Mutates and
+// returns the array so the fetch handler can attach paths in place.
+export function attachSearchPaths(items) {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  for (const item of items) {
+    const path = [];
+    let current = item;
+    while (current.parentId) {
+      const parent = byId.get(current.parentId);
+      if (!parent) break;
+      path.unshift(parent.plainName);
+      current = parent;
+    }
+    item.parentPath = path;
+  }
+  return items;
+}
+
 // ---- View switching ----
 
 // The current view is a place id ('tasks', 'daily', or a registered node's

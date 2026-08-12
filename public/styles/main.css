@@ -472,6 +472,34 @@ button {
   color: var(--subtext0);
 }
 
+/* ---- Search view ---- */
+
+.search-bar {
+  padding: 12px 14px 0;
+}
+
+/* 16px を切ると iOS がフォーカス時に画面ごとズームするため下げない */
+.search-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: 400 16px/1.3 var(--font-sans);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-input::placeholder {
+  color: var(--subtext0);
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
 /* ---- FAB ---- */
 
 /* FAB は塗らない: 地色の面に枠線、ビューバー(z-index 20)より上 */

@@ -43,8 +43,11 @@ function dayDiff(dateStr, todayStr) {
 // ---- Title normalization ----
 
 // Workflowy node names can contain inline HTML (<a>, <b>, ...), a literal
-// leading timestamp ("19:44 ..."), and emoji. The design shows a clean plain
-// title; links stay reachable via the Workflowy link in the detail sheet.
+// leading timestamp ("19:44 ..."), and emoji. This is the plain-text
+// normalization for contexts that can't take markup (parent labels, child
+// previews, delete confirms, toasts, inline editing). Row titles and the
+// detail sheet render formatting via richtext.js, which applies the same
+// normalization with the whitelist kept (renderRichTitle).
 export function normalizeTitle(raw) {
   if (!raw) return "";
   let s = String(raw).replace(/<[^>]*>/g, " ");

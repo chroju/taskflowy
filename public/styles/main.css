@@ -1913,3 +1913,74 @@ button.sheet-prop-value {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ==================== リッチテキスト描画（Issue #13） ==================== */
+
+/* richtext.js のサニタイザを通した HTML を流し込む面（行タイトル・詳細シート）。
+   Charcoal の無彩色設計を崩さないため、リンクは色ではなく下線で示す */
+.rich-text .rt-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--overlay0);
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.rich-text code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-tab);
+}
+
+/* 画像URLはテキスト中にリンクとして残し、サムネイルは本文の後ろにまとめて
+   表示する。一覧の走査性を保つため高さを絞り、詳細シートでは大きめに見せる */
+.rich-text .rt-img {
+  display: block;
+  max-width: 100%;
+  max-height: 72px;
+  border-radius: 8px;
+  margin: 6px 0 2px;
+}
+
+#sheet-task .rich-text .rt-img {
+  max-height: 240px;
+  border-radius: 10px;
+}
+
+/* タスク詳細の「メモ」行: リッチ描画では複数行の note をそのまま見せる
+   （note 面 .sheet-note-face は元から pre-wrap） */
+.sheet-note.rich-text {
+  white-space: pre-wrap;
+}
+
+/* Workflowy の文字色（c-*）/ハイライト（bc-*）。Charcoal に合わせて彩度を
+   落とした写像。未定義の色クラスは素通し（無装飾）になる */
+.rich-text .c-red { color: #e39098; }
+.rich-text .c-orange { color: #e0b18e; }
+.rich-text .c-yellow { color: #d9c98f; }
+.rich-text .c-green { color: #a8c9a2; }
+.rich-text .c-teal { color: #93cdc4; }
+.rich-text .c-sky { color: #93c4d9; }
+.rich-text .c-blue { color: #96b6d9; }
+.rich-text .c-purple { color: #b8a6d9; }
+.rich-text .c-pink { color: #d9a0c4; }
+.rich-text .c-gray { color: #9aa0aa; }
+
+.rich-text [class^="bc-"],
+.rich-text [class*=" bc-"] {
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.rich-text .bc-red { background: rgba(227, 144, 152, 0.24); }
+.rich-text .bc-orange { background: rgba(224, 177, 142, 0.24); }
+.rich-text .bc-yellow { background: rgba(217, 201, 143, 0.24); }
+.rich-text .bc-green { background: rgba(168, 201, 162, 0.24); }
+.rich-text .bc-teal { background: rgba(147, 205, 196, 0.24); }
+.rich-text .bc-sky { background: rgba(147, 196, 217, 0.24); }
+.rich-text .bc-blue { background: rgba(150, 182, 217, 0.24); }
+.rich-text .bc-purple { background: rgba(184, 166, 217, 0.24); }
+.rich-text .bc-pink { background: rgba(217, 160, 196, 0.24); }
+.rich-text .bc-gray { background: rgba(154, 160, 170, 0.24); }

@@ -60,6 +60,7 @@ import {
   ensureSearchPlace,
   searchItems,
   attachSearchPaths,
+  searchPathLabel,
 } from "./views.js";
 import { urlBase64ToUint8Array } from "./push.js";
 
@@ -1350,7 +1351,7 @@ function buildDateHeader(group, isToday) {
 
 // Daily / 登録ノードビュー / 検索結果の行（タスクもメモも同じ操作を持つ）。
 // showTime: Daily のみ時刻の左カラムを出す。origin: 'daily' | 'search' | <place id>。
-// showParent: 検索結果でどこのノードかを示す親名の行を出す（要 item.parentPath）。
+// showParent: 検索結果でどこのノードかを示すブレッドクラム行を出す（要 item.parentPath）。
 // childEntry: サブツリー展開への入口。既定の 'preview'（子タイトルの薄い列。
 // 行ごとに子取得のリクエストが走る）か 'chevron'（Today/Deadlines と同じ
 // 右端ボタン。タップ時にだけ取得するため、件数が読めない検索結果はこちら）。
@@ -1383,11 +1384,15 @@ function buildItemRow(item, { showTime, origin, showParent = false, childEntry =
   setRichTitle(name, item.plainName, "（無題）");
   body.appendChild(name);
 
-  if (showParent && item.parentPath && item.parentPath.length) {
-    const parent = document.createElement("div");
-    parent.className = "task-parent";
-    parent.textContent = normalizeTitle(item.parentPath[item.parentPath.length - 1]);
-    body.appendChild(parent);
+  if (showParent) {
+    // トップからのブレッドクラム（深い階層はルート側を「…」に畳む）
+    const label = searchPathLabel(item.parentPath);
+    if (label) {
+      const parent = document.createElement("div");
+      parent.className = "task-parent search-path";
+      parent.textContent = label;
+      body.appendChild(parent);
+    }
   }
 
   // タスクであることは本文の下のタグだけで示す。タグのタップで完了トグル。

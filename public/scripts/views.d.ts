@@ -43,6 +43,7 @@ export interface SearchItemLike {
 
 export function searchItems<T extends SearchItemLike>(items: T[], query: string): T[];
 export function attachSearchPaths<T extends SearchItemLike>(items: T[]): T[];
+export function searchPathLabel(parentPath: string[] | null | undefined, maxSegments?: number): string;
 
 export function ensureVisibleView(places: Place[], view: string | null): string | null;
 export function stepView(places: Place[], view: string, dir: number): string;

@@ -39,6 +39,7 @@ import {
   ensureSearchPlace,
   searchItems,
   attachSearchPaths,
+  searchPathLabel,
 } from "../../public/scripts/views.js";
 import type { Place } from "../../public/scripts/views.js";
 
@@ -600,5 +601,27 @@ describe("attachSearchPaths", () => {
   it("returns the same array for chaining", () => {
     const items = [{ id: "a", plainName: "A", parentId: null }];
     expect(attachSearchPaths(items)).toBe(items);
+  });
+});
+
+describe("searchPathLabel", () => {
+  it("joins the whole path root-first with slashes", () => {
+    expect(searchPathLabel(["Projects", "Taskflowy"])).toBe("Projects / Taskflowy");
+    expect(searchPathLabel(["Inbox"])).toBe("Inbox");
+  });
+
+  it("trims deep paths from the root side, keeping the nearest ancestors", () => {
+    expect(searchPathLabel(["A", "B", "C", "D", "E"])).toBe("… / C / D / E");
+    expect(searchPathLabel(["A", "B", "C"])).toBe("A / B / C");
+    expect(searchPathLabel(["A", "B", "C", "D"], 2)).toBe("… / C / D");
+  });
+
+  it("normalizes segment names and drops ones that become empty", () => {
+    expect(searchPathLabel(['<b>Projects</b>', "🔥", "Taskflowy"])).toBe("Projects / Taskflowy");
+  });
+
+  it("returns an empty string for missing or empty paths", () => {
+    expect(searchPathLabel([])).toBe("");
+    expect(searchPathLabel(undefined)).toBe("");
   });
 });

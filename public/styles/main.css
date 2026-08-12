@@ -350,6 +350,14 @@ button {
   color: var(--subtext0);
 }
 
+/* 検索結果のブレッドクラム: セグメント数は JS 側で畳むが、それでも長い
+   名前で折り返さないよう 1 行で省略する */
+.task-parent.search-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .task-meta {
   flex: none;
   text-align: right;

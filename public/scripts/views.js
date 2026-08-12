@@ -3,7 +3,7 @@
 // destination. DOM wiring lives in client.js; unit tests are in
 // src/test/views.test.ts.
 
-import { localDateString, addDays, nextMonday } from "./tasks.js";
+import { localDateString, addDays, nextMonday, normalizeTitle } from "./tasks.js";
 
 // ---- Places ----
 
@@ -152,6 +152,16 @@ export function attachSearchPaths(items) {
     item.parentPath = path;
   }
   return items;
+}
+
+// 検索結果行のブレッドクラム: 親パス全体を「A / B / C」で連ねる（区切りは
+// 場所登録の refPath と同じ）。深い階層はルート側から落として「… / B / C」に
+// する -- 直近の親ほどノードの手掛かりになるため、末尾を必ず残す。
+export function searchPathLabel(parentPath, maxSegments = 3) {
+  const names = (parentPath || []).map((name) => normalizeTitle(name)).filter(Boolean);
+  if (!names.length) return "";
+  const tail = names.slice(-maxSegments);
+  return (names.length > tail.length ? ["…", ...tail] : tail).join(" / ");
 }
 
 // ---- View switching ----

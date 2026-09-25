@@ -403,6 +403,18 @@ button {
 
 /* ---- Nodes list ---- */
 
+.node-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 12px 14px 0;
+}
+
+.node-filters .node-filter {
+  margin: 0;
+}
+
 .node-filter {
   display: block;
   margin: 12px 14px 0 auto;
@@ -427,6 +439,12 @@ button {
 
 .node-list {
   padding: 12px 14px 0;
+}
+
+.node-sep {
+  padding: 14px 12px 8px;
+  font: 500 12.5px/1 var(--font-sans);
+  color: var(--subtext0);
 }
 
 .node-row {

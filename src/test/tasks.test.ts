@@ -111,6 +111,29 @@ describe("extractTasks", () => {
     expect(tasks[0].parentPath).toEqual(["Mid"]);
   });
 
+  it("sets parentDate when the parent is a calendar day node", () => {
+    const nodes = [
+      makeNode({
+        id: "day",
+        name: '<time startYear="2026" startMonth="9" startDay="23">Wed, Sep 23, 2026</time>',
+        parent_id: "month",
+      }),
+      makeNode({ id: "task1", name: "Leaf task", parent_id: "day", data: { layoutMode: "todo" } }),
+    ];
+    const tasks = extractTasks(nodes);
+    expect(tasks[0].parentDate).toBe("2026-09-23");
+  });
+
+  it("leaves parentDate null for an ordinary parent or a root-level task", () => {
+    const nodes = [
+      makeNode({ id: "p", name: "Project", parent_id: null }),
+      makeNode({ id: "task1", name: "Leaf task", parent_id: "p", data: { layoutMode: "todo" } }),
+      makeNode({ id: "task2", name: "Root task", parent_id: null, data: { layoutMode: "todo" } }),
+    ];
+    const tasks = extractTasks(nodes);
+    expect(tasks.map((t) => t.parentDate)).toEqual([null, null]);
+  });
+
   it("returns empty parentPath for a root-level task", () => {
     const nodes = [makeNode({ id: "task1", name: "Leaf task", parent_id: null, data: { layoutMode: "todo" } })];
     const tasks = extractTasks(nodes);

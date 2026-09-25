@@ -8,6 +8,7 @@ export interface TaskLike {
   due?: TaskDue | null;
   parentId?: string | null;
   parentPath?: string[];
+  parentDate?: string | null;
   createdAt?: number;
   completedAt?: number | null;
   completed?: boolean;
@@ -25,6 +26,7 @@ export interface TaskGroup<T> {
 export interface NodeSummary<T> {
   key: string;
   label: string;
+  date?: string | null; // set when the parent is a calendar day node
   total: number;
   done: number;
   hasOverdue: boolean;
@@ -67,6 +69,10 @@ export function summarizeNodes<T extends TaskLike>(tasks: T[], todayStr?: string
 export function filterFinishedNodes<T extends TaskLike>(
   nodes: NodeSummary<T>[],
   showFinished: boolean
+): NodeSummary<T>[];
+export function filterDateNodes<T extends TaskLike>(
+  nodes: NodeSummary<T>[],
+  showDateNodes: boolean
 ): NodeSummary<T>[];
 export function groupNodeTasks<T extends TaskLike>(tasks: T[], showCompleted?: boolean): TaskGroup<T>[];
 export function donutDash(done: number, total: number): string;

@@ -14,6 +14,7 @@ import {
   countCompletedForView,
   summarizeNodes,
   filterFinishedNodes,
+  filterDateNodes,
   groupNodeTasks,
   donutDash,
   workflowyUrl,
@@ -1167,24 +1168,38 @@ function loadMoreCompletedDue() {
 function renderNodeList() {
   const allNodes = summarizeNodes(nodeSummaryTasks());
   const showFinished = settings.showFinishedNodes === true;
-  const nodes = filterFinishedNodes(allNodes, showFinished);
-  const hiddenCount = allNodes.length - nodes.length;
+  const showDates = settings.showDateNodes === true;
+  // 完了済みの絞り込みを先に掛け、日付ノードの件数はその残りから数える
+  const unfinished = filterFinishedNodes(allNodes, showFinished);
+  const nodes = filterDateNodes(unfinished, showDates);
+  const hiddenCount = allNodes.length - unfinished.length;
+  const dateCount = unfinished.filter((n) => n.date).length;
   screenCount.textContent = `${nodes.length} ノード`;
 
-  const toggle = document.createElement("button");
-  toggle.className = "node-filter" + (showFinished ? " active" : "");
-  toggle.textContent = showFinished ? "完了済みを隠す" : `完了済みを表示${hiddenCount ? ` (${hiddenCount})` : ""}`;
-  toggle.addEventListener("click", () => {
-    settings.showFinishedNodes = !showFinished;
-    saveSettings();
-    render();
-  });
-  taskList.appendChild(toggle);
+  const filters = document.createElement("div");
+  filters.className = "node-filters";
+  if (dateCount > 0 || showDates) {
+    filters.appendChild(
+      buildNodeFilter(showDates, showDates ? "日付ノードを隠す" : `日付ノードを表示 (${dateCount})`, () => {
+        settings.showDateNodes = !showDates;
+      })
+    );
+  }
+  filters.appendChild(
+    buildNodeFilter(showFinished, showFinished ? "完了済みを隠す" : `完了済みを表示${hiddenCount ? ` (${hiddenCount})` : ""}`, () => {
+      settings.showFinishedNodes = !showFinished;
+    })
+  );
+  taskList.appendChild(filters);
 
   if (!nodes.length) {
     const empty = document.createElement("p");
     empty.className = "list-empty";
-    empty.textContent = hiddenCount ? "未完了のタスクを持つノードはありません" : "タスクはありません";
+    empty.textContent = hiddenCount
+      ? "未完了のタスクを持つノードはありません"
+      : dateCount
+        ? "日付ノード以外にタスクを持つノードはありません"
+        : "タスクはありません";
     taskList.appendChild(empty);
     return;
   }
@@ -1192,7 +1207,16 @@ function renderNodeList() {
   const container = document.createElement("div");
   container.className = "node-list";
 
+  let dateHeaderShown = false;
   for (const node of nodes) {
+    // filterDateNodes が日付ノードを末尾にまとめているので、最初の 1 件の前に小見出しを置く
+    if (node.date && !dateHeaderShown) {
+      const sep = document.createElement("div");
+      sep.className = "node-sep";
+      sep.textContent = "日付ノード";
+      container.appendChild(sep);
+      dateHeaderShown = true;
+    }
     const row = document.createElement("button");
     row.className = "node-row";
     const ring = node.hasOverdue ? "#e39098" : "#e6e8ec";
@@ -1217,6 +1241,19 @@ function renderNodeList() {
   }
 
   taskList.appendChild(container);
+}
+
+// Nodes 一覧上部の絞り込みボタン。flip で設定を書き換えたあと保存して再描画する。
+function buildNodeFilter(active, label, flip) {
+  const btn = document.createElement("button");
+  btn.className = "node-filter" + (active ? " active" : "");
+  btn.textContent = label;
+  btn.addEventListener("click", () => {
+    flip();
+    saveSettings();
+    render();
+  });
+  return btn;
 }
 
 // サブツリー展開への入口（子の有無は事前判定しない。無ければ expandSubtree

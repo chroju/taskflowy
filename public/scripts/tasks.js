@@ -233,9 +233,19 @@ export function groupTasksForView(
 
 const NO_NODE_LABEL = "（ノードなし）";
 
+// Label of a calendar day node: "2026/9/23（水）" (same form as the Daily
+// note sheet title). Its own name is only a <time> tag, which the server
+// strips to an empty string.
+function dayNodeLabel(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const weekday = JP_WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${y}/${m}/${d}（${weekday}）`;
+}
+
 // Summarizes tasks per nearest parent node for the Nodes list: label,
 // done/total counts, and whether any incomplete task is overdue. Order
-// follows first-seen appearance in the input list.
+// follows first-seen appearance in the input list. `date` is set when the
+// parent is a calendar day node (task.parentDate).
 export function summarizeNodes(tasks, todayStr = localDateString()) {
   const order = [];
   const byKey = new Map();
@@ -243,8 +253,13 @@ export function summarizeNodes(tasks, todayStr = localDateString()) {
     const key = task.parentId || "__none__";
     if (!byKey.has(key)) {
       const path = task.parentPath || [];
-      const label = path.length > 0 ? normalizeTitle(path[path.length - 1]) || NO_NODE_LABEL : NO_NODE_LABEL;
-      byKey.set(key, { key, label, total: 0, done: 0, hasOverdue: false, tasks: [] });
+      const date = task.parentDate || null;
+      const label = date
+        ? dayNodeLabel(date)
+        : path.length > 0
+          ? normalizeTitle(path[path.length - 1]) || NO_NODE_LABEL
+          : NO_NODE_LABEL;
+      byKey.set(key, { key, label, date, total: 0, done: 0, hasOverdue: false, tasks: [] });
       order.push(key);
     }
     const node = byKey.get(key);
@@ -265,6 +280,16 @@ export function summarizeNodes(tasks, todayStr = localDateString()) {
 export function filterFinishedNodes(nodes, showFinished) {
   if (showFinished) return nodes;
   return nodes.filter((node) => node.total === 0 || node.done < node.total);
+}
+
+// Calendar day nodes are hidden unless `showDateNodes` is set -- where a task
+// sits matters little when it is just the day it was written on. When shown,
+// they go after the ordinary nodes, newest date first.
+export function filterDateNodes(nodes, showDateNodes) {
+  const ordinary = nodes.filter((node) => !node.date);
+  if (!showDateNodes) return ordinary;
+  const days = nodes.filter((node) => node.date).sort((a, b) => b.date.localeCompare(a.date));
+  return [...ordinary, ...days];
 }
 
 // Splits a single node's tasks into 未完了 / 完了 groups (empty omitted).

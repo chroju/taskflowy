@@ -41,6 +41,14 @@ export function stripTimeMarkup(name: string): string {
   return name.replace(TIME_TAG_RE, "").replace(/\s+/g, " ").trim();
 }
 
+// Date (YYYY-MM-DD) of a native calendar day node, whose name is nothing but a
+// date-only <time> tag. Null for anything else (extra text, a time of day).
+export function calendarDayOf(name: string): string | null {
+  if (stripTimeMarkup(name) !== "") return null;
+  const parsed = parseTimeMarkup(name);
+  return parsed && parsed.time === null ? parsed.date : null;
+}
+
 function formatDisplayDate(date: string, time?: string): string {
   const [y, m, d] = date.split("-").map(Number);
   // Construct in UTC to avoid local-timezone drift affecting the weekday/date.

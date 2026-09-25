@@ -5,6 +5,7 @@ import {
   buildTimeMarkup,
   setTimeMarkup,
   replaceNameText,
+  calendarDayOf,
 } from "../api/time-markup";
 
 describe("parseTimeMarkup", () => {
@@ -59,6 +60,34 @@ describe("stripTimeMarkup", () => {
   it("returns empty string when the name is only a time markup", () => {
     const name = '<time startYear="2026" startMonth="7" startDay="28">Tue, Jul 28, 2026</time>';
     expect(stripTimeMarkup(name)).toBe("");
+  });
+});
+
+describe("calendarDayOf", () => {
+  it("returns the date of a node whose name is only a date markup (a calendar day node)", () => {
+    expect(calendarDayOf('<time startYear="2026" startMonth="9" startDay="23">Wed, Sep 23, 2026</time>')).toBe(
+      "2026-09-23"
+    );
+  });
+
+  it("ignores surrounding whitespace", () => {
+    expect(calendarDayOf(' <time startYear="2026" startMonth="9" startDay="4">Sep 4, 2026</time> ')).toBe("2026-09-04");
+  });
+
+  it("returns null when the name has text besides the markup", () => {
+    expect(calendarDayOf('Buy milk <time startYear="2026" startMonth="9" startDay="23">Wed, Sep 23, 2026</time>')).toBeNull();
+  });
+
+  it("returns null when the markup carries a time", () => {
+    expect(
+      calendarDayOf(
+        '<time startYear="2026" startMonth="9" startDay="23" startHour="14" startMinute="30">Wed, Sep 23, 2026 at 2:30 PM</time>'
+      )
+    ).toBeNull();
+  });
+
+  it("returns null for a plain name", () => {
+    expect(calendarDayOf("September")).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 import type { ExportNode, Task, RecurCompletion } from "../types";
-import { parseTimeMarkup, stripTimeMarkup } from "./time-markup";
+import { calendarDayOf, parseTimeMarkup, stripTimeMarkup } from "./time-markup";
 
 // Root-first path of ancestor names, walking parent_id up until the root
 // or until a parent id is missing from the node list (truncates there).
@@ -21,6 +21,10 @@ export function extractTasks(
 ): Task[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const isCompleted = (n: ExportNode) => n.completedAt != null || !!n.completed;
+  const parentDateOf = (n: ExportNode) => {
+    const parent = n.parent_id ? byId.get(n.parent_id) : undefined;
+    return parent ? calendarDayOf(parent.name) : null;
+  };
 
   return nodes
     .filter((n) => n.data?.layoutMode === "todo" && (options.includeCompleted || !isCompleted(n)))
@@ -31,6 +35,7 @@ export function extractTasks(
       note: n.note,
       parentId: n.parent_id,
       parentPath: buildParentPath(n, byId),
+      parentDate: parentDateOf(n),
       createdAt: n.createdAt,
       completedAt: n.completedAt ?? null,
       due: parseTimeMarkup(n.name),

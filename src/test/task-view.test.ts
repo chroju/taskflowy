@@ -17,6 +17,7 @@ const {
   countCompletedForView,
   summarizeNodes,
   filterFinishedNodes,
+  filterDateNodes,
   groupNodeTasks,
   donutDash,
   workflowyUrl,
@@ -425,6 +426,44 @@ describe("summarizeNodes", () => {
   it("normalizes the node label", () => {
     const nodes = summarizeNodes([task({ parentId: "p1", parentPath: ["<b>Bold</b> 🔥 name"] })], TODAY);
     expect(nodes[0].label).toBe("Bold name");
+  });
+});
+
+describe("summarizeNodes (calendar day parents)", () => {
+  it("labels a calendar day parent by its date and marks it with date", () => {
+    const nodes = summarizeNodes(
+      [task({ id: "a", parentId: "day", parentPath: ["2026", "September", ""], parentDate: "2026-09-23" })],
+      TODAY
+    );
+    expect(nodes[0].label).toBe("2026/9/23（水）");
+    expect(nodes[0].date).toBe("2026-09-23");
+  });
+
+  it("leaves date null for ordinary parents", () => {
+    const nodes = summarizeNodes([task({ parentId: "p1", parentPath: ["Project"] })], TODAY);
+    expect(nodes[0].date).toBeNull();
+  });
+});
+
+describe("filterDateNodes", () => {
+  const project = { key: "p1", label: "Project", date: null, total: 1, done: 0, hasOverdue: false, tasks: [] };
+  const day = { key: "d1", label: "2026/9/23（水）", date: "2026-09-23", total: 1, done: 0, hasOverdue: false, tasks: [] };
+
+  it("drops calendar day nodes by default", () => {
+    expect(filterDateNodes([project, day], false).map((n: { key: string }) => n.key)).toEqual(["p1"]);
+  });
+
+  it("keeps them when showDateNodes is true", () => {
+    expect(filterDateNodes([project, day], true).map((n: { key: string }) => n.key)).toEqual(["p1", "d1"]);
+  });
+
+  it("moves calendar day nodes after ordinary nodes, newest date first", () => {
+    const older = { ...day, key: "d0", date: "2026-09-20" };
+    const newer = { ...day, key: "d2", date: "2026-09-24" };
+    const other = { ...project, key: "p2" };
+    expect(
+      filterDateNodes([older, project, newer, day, other], true).map((n: { key: string }) => n.key)
+    ).toEqual(["p1", "p2", "d2", "d1", "d0"]);
   });
 });
 

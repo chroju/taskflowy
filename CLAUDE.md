@@ -41,6 +41,7 @@ npm run test:ui    # vitest UI起動
 - `api/crypto.ts` - APIキーの暗号化/復号化
 - `api/tasks.ts` - `nodes-export`のフラットなノード配列からタスク（layoutMode=todo）を抽出。
   デフォルトは未完了のみ、`includeCompleted`オプションで完了済みも含める（`/api/tasks`が使用）。
+  親が日付ノードなら`parentDate`（`YYYY-MM-DD`）を付ける。
   `mergeRecurCompletions`は繰り返しタスクの完了記録を仮想の完了タスクとして合流させる
 - `api/recur.ts` - 繰り返しルールの純粋ロジック。`parseRecurRule`（APIバリデーション）と
   `nextOccurrence`（指定日より後の直近の該当日。文字列/UTC演算でTZ非依存）
@@ -101,7 +102,13 @@ npm run test:ui    # vitest UI起動
   完了済みも`completed`フラグ付きで返す。Cron通知は未完了のみ対象。クライアントは60秒TTLのキャッシュを持つ
 - **Nodesタブのフィルタ**: TODOがすべて完了したノードはデフォルトで非表示。一覧右上のボタンで
   表示/非表示を切り替え、状態は`taskflowy_settings`の`showFinishedNodes`に保存する。
-  判定は`filterFinishedNodes`（純粋関数）。TODOを1件も持たないノードは非表示の対象外
+  判定は`filterFinishedNodes`（純粋関数）。TODOを1件も持たないノードは非表示の対象外。
+  ネイティブカレンダーの日付ノード（名前が日付のみの`<time>`タグ）を親に持つグループも
+  デフォルトで非表示にし、隣の「日付ノードを表示 (N)」ボタンで切り替える（`showDateNodes`）。
+  サーバーが`calendarDayOf`（`time-markup.ts`）で判定して`/api/tasks`の各タスクに`parentDate`を
+  付け、クライアントは`summarizeNodes`でラベルを`2026/9/23（水）`にし、`filterDateNodes`で
+  表示時は通常ノードの後ろに新しい日付順で並べる（「日付ノード」の小見出し付き）。
+  完了済みの絞り込みが先に効き、(N)はその残りの日付ノード数
 - **完了タスクの表示トグル**: 全ビュー（Today/Deadlinesタブ・Nodesドリルダウン・Daily・
   登録ノードビュー）で完了済みタスクをデフォルト非表示にし、一覧上部のボタンで表示/非表示を
   切り替える。状態はビュー/タブごとに独立で、`taskflowy_settings`の`showCompletedTasks`に

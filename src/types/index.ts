@@ -46,6 +46,7 @@ export interface Task {
   note: string | null;
   parentId: string | null;
   parentPath: string[]; // root-first, nearest parent last
+  parentDate?: string | null; // YYYY-MM-DD when the parent is a calendar day node
   createdAt: number;
   completedAt: number | null; // Unix seconds; used to date the 完了 groups
   due: { date: string; time: string | null } | null;
